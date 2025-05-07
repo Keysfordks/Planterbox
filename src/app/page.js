@@ -13,7 +13,7 @@ export default function Home() {
             justifyContent: "space-between",
             flexWrap: "wrap",
             color: "white",
-            gap: "50px" 
+            gap: "50px",
           }}
         >
           {/* <div style={{ display: "flex", gap: "50px" }}> */}
@@ -33,8 +33,8 @@ export default function Home() {
             priority
           />
           {/* </div> */}
-          <h1 style={{ fontWeight: "1000", fontSize: "40px" }}>
-            Automated Plant Care
+          <h1 style={{ width: "350px", textWrap: "wrap" ,fontWeight: "1000", fontSize: "40px" }}>
+            Design 1 Prototype Demo
           </h1>
         </div>
         <div
@@ -45,7 +45,7 @@ export default function Home() {
             background: "white",
             width: "80vw",
             height: "fitcontent",
-            padding: "5% 15%",
+            padding: "5% 5%",
             gap: "50px",
             borderRadius: "10px",
             justifyContent: "center",
@@ -166,7 +166,6 @@ export default function Home() {
               <p> Current value reading: 50</p>
             </div>
           </div>
-          
         </div>
         <div className="flex gap-4 items-center flex-col sm:flex-row">
           <a
