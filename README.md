@@ -24,34 +24,40 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 To get started with the ESP32 and communicate with the website, you need to set up the necessary drivers and environment
 
-Step 1: Install the USB-to-UART Bridge VCP Driver
-https://www.silabs.com/software-and-tools/usb-to-uart-bridge-vcp-drivers?tab=downloads
-This driver allows your computer to recognize the ESP32 board and assign a COM port for communication.
+**Step 1: Install the USB-to-UART Bridge VCP Driver.**
 
-Step 2: Set Up the PlatformIO Environment
-Open your project in VS Code.
-Ensure you have the PlatformIO extension installed.
+This driver allows your computer to recognize the ESP32 board and assign a COM port for communication: https://www.silabs.com/software-and-tools/usb-to-uart-bridge-vcp-drivers?tab=downloads
+
+**Step 2: Set Up the PlatformIO Environment**
+
+Open your project in VS Code, and ensure you have the PlatformIO extension installed.
+
 Connect your ESP32 board to your computer with a micro-USB cable.
+
 Open the platformio.ini file located in the root of your project. Add the following lines to tell PlatformIO which COM port to use and to set the correct baud rate for the Serial Monitor:
 
+```bash
 [env:upesy_wroom]
 platform = espressif32
 board = upesy_wroom
 framework = arduino
 upload_port = COM3
 monitor_speed = 115200
+```
 
 The ESP32 code is located in the src/main.cpp file. This code connects the board to your Wi-Fi network and sends simulated sensor data to your Next.js server.
 
 Update the variables in src/main.cpp with your Wi-Fi credentials and your computer's local IP address (this is the current main.cpp):
 
+```bash
+#include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
 
 const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
 
-// Your PC's IP address (check this using 'ipconfig' or 'ifconfig')
+// Your PCs IP address (check this using 'ipconfig' or 'ifconfig')
 const char* serverName = "http://YOUR_PC_IP_ADDRESS:3000/api/sensordata"; 
 
 void setup() {
@@ -94,6 +100,7 @@ void loop() {
   }
   delay(5000); // Wait 5 seconds before sending again
 }
+```
 
 ## Learn More
 
