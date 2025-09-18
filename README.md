@@ -20,6 +20,25 @@ You can start editing the page by modifying `app/page.js`. The page auto-updates
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Board Communication
+
+To get started with the ESP32 and communicate with the website, you need to set up the necessary drivers and environment
+
+**Step 1: Install the USB-to-UART Bridge VCP Driver.**
+
+This driver allows your computer to recognize the ESP32 board and assign a COM port for communication: https://www.silabs.com/software-and-tools/usb-to-uart-bridge-vcp-drivers?tab=downloads
+
+**Step 2: Set Up the PlatformIO Environment**
+
+Open your project in VS Code, and ensure you have the PlatformIO extension installed.
+
+Connect your ESP32 board to your computer with a micro-USB cable.
+
+The ESP32 code is located in the esp32-firmware folder, and must be opened with the platformIO extension. This code connects the board to your Wi-Fi network and sends simulated sensor data to your Next.js server.
+
+Update the variables in src/main.cpp with your Wi-Fi credentials and your computer's local IP address
+
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

@@ -1,103 +1,209 @@
-import Image from "next/image";
+'use client';
+import { useState, useEffect } from "react";
+import "./globals.css";
+
+const sensorNames = {
+  temperature: "Temperature (°C)",
+  humidity: "Humidity (%)",
+  ph: "pH Level",
+  ppm: "PPM (Nutrients)",
+};
+
+const plants = ["pothos", "mint", "monstera"];
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.js
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [selectedPlant, setSelectedPlant] = useState(null);
+  const [dropdownPlant, setDropdownPlant] = useState("pothos");
+  const [sensorData, setSensorData] = useState({});
+  const [idealConditions, setIdealConditions] = useState({});
+  const [sensorStatus, setSensorStatus] = useState({});
+  const [lastUpdated, setLastUpdated] = useState(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+  useEffect(() => {
+    const savedPlant = localStorage.getItem('selectedPlant');
+    if (savedPlant) {
+      setSelectedPlant(savedPlant);
+      setDropdownPlant(savedPlant);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPlant) return;
+
+    // Fetch the plant's ideal conditions once
+    const fetchIdealConditions = async () => {
+      try {
+        const response = await fetch(`/api/sensordata?plant=${selectedPlant}`);
+        const data = await response.json();
+        setIdealConditions(data.ideal_conditions);
+      } catch (error) {
+        console.error("Failed to fetch ideal conditions:", error);
+      }
+    };
+
+    // Fetch the real-time sensor data and status
+    const fetchData = async () => {
+      try {
+        const response = await fetch('/api/sensordata');
+        const data = await response.json();
+        setSensorData(data.sensorData);
+        setSensorStatus(data.sensorStatus);
+        setLastUpdated(new Date().toLocaleTimeString());
+      } catch (error) {
+        console.error("Failed to fetch sensor data:", error);
+      }
+    };
+
+    fetchIdealConditions();
+    fetchData();
+    const intervalId = setInterval(() => {
+        fetchData();
+    }, 3000);
+    return () => clearInterval(intervalId);
+  }, [selectedPlant]);
+
+  const handlePlantSelection = async (plantName) => {
+    try {
+      // Send the plant selection to the backend
+      const response = await fetch('/api/sensordata', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "select_plant", selectedPlant: plantName }),
+      });
+      if (response.ok) {
+        setSelectedPlant(plantName);
+        localStorage.setItem('selectedPlant', plantName);
+      } else {
+        console.error("Failed to save plant selection.");
+      }
+    } catch (error) {
+      console.error("Failed to send plant selection:", error);
+    }
+  };
+
+  const handleAbortPlant = async () => {
+    try {
+      const response = await fetch('/api/sensordata', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: "abort_plant" }),
+      });
+
+      if (response.ok) {
+        console.log("Sensor data successfully deleted.");
+        setSelectedPlant(null);
+        localStorage.removeItem('selectedPlant');
+        setSensorData({});
+        setIdealConditions({});
+        setDropdownPlant("pothos");
+      } else {
+        console.error("Failed to abort plant.");
+      }
+    } catch (error) {
+      console.error("Request failed:", error);
+    }
+  };
+
+  const sendCommand = async (updates) => {
+    try {
+      await fetch('/api/sensordata', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+    } catch (error) {
+      console.error("Failed to send command:", error);
+    }
+  };
+
+  // Conditional Rendering: Show Welcome Page or Dashboard
+  if (!selectedPlant) {
+    return (
+      <main className="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col items-center justify-center p-6 space-y-8">
+        {/* Welcome Box */}
+        <div className="w-full max-w-2xl bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 text-center">
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">Welcome to Your Smart Garden</h1>
+          <p className="text-gray-700 dark:text-gray-300 text-lg">
+            Please select the plant you are growing to begin monitoring its health.
+          </p>
+        </div>
+        
+        {/* Dropdown/Search Menu */}
+        <div className="w-full max-w-sm bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 text-center">
+          <select 
+            className="w-full p-3 mb-4 rounded-lg border-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white"
+            value={dropdownPlant}
+            onChange={(e) => setDropdownPlant(e.target.value)}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            {plants.map(plant => (
+              <option key={plant} value={plant}>
+                {plant.charAt(0).toUpperCase() + plant.slice(1)}
+              </option>
+            ))}
+          </select>
+          <button
+            className="w-full px-8 py-4 rounded-full font-bold text-lg shadow-md bg-green-500 text-white hover:bg-green-600 transition"
+            onClick={() => handlePlantSelection(dropdownPlant)}
           >
-            Read our docs
-          </a>
+            Confirm Plant
+          </button>
         </div>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+    );
+  }
+
+  // Dashboard View
+  const { _id, timestamp, pump, light, tds, distance, ...sensors } = sensorData;
+  const { light_pwm_cycle, ...idealRanges } = idealConditions || {};
+
+  return (
+    <main className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-6 flex flex-col items-center">
+      <div className="w-full max-w-4xl bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8">
+        <h1 className="text-3xl font-bold text-center mb-2">{selectedPlant.charAt(0).toUpperCase() + selectedPlant.slice(1)} Health Dashboard</h1>
+        <p className="text-center text-sm mb-6 text-gray-500 dark:text-gray-400">
+          Last updated: {lastUpdated}
+        </p>
+
+        {/* Sensor Status Section */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+          {Object.keys(sensors).map(key => {
+            const value = sensors[key];
+            const idealRange = idealRanges?.[key];
+            const status = sensorStatus[key] || "Loading...";
+            const statusColor = status === "IDEAL" ? "text-green-500" : "text-red-500";
+            const valueDisplay = value !== null ? (typeof value === 'number' ? parseFloat(value).toFixed(2) : value) : "Loading...";
+
+            return (
+              <div key={key} className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg text-center shadow-sm">
+                <div className="text-2xl font-semibold mb-2">{sensorNames[key] || key}</div>
+                <div className={`text-4xl font-extrabold mb-1 ${statusColor}`}>
+                  {valueDisplay}
+                </div>
+                {idealRange && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    Ideal: {idealRange.min || idealRange.ph_min}-{idealRange.max || idealRange.ph_max}
+                  </div>
+                )}
+                <div className={`mt-2 font-bold ${statusColor}`}>
+                  {status}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        
+        {/* Abort Button */}
+        <div className="mt-8 text-center">
+          <button
+            className="px-6 py-3 rounded-lg font-bold shadow-md bg-red-600 text-white hover:bg-red-700 transition"
+            onClick={handleAbortPlant}
+          >
+            Abort Plant
+          </button>
+        </div>
+      </div>
+    </main>
   );
 }
