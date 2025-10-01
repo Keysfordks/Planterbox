@@ -7,6 +7,7 @@ const sensorNames = {
   humidity: "Humidity (%)",
   ph: "pH Level",
   ppm: "PPM (Nutrients)",
+  water_sufficient: "Water Level",
 };
 
 const plants = ["pothos", "mint", "monstera"];
@@ -30,7 +31,6 @@ export default function Home() {
   useEffect(() => {
     if (!selectedPlant) return;
 
-    // Fetch the plant's ideal conditions once
     const fetchIdealConditions = async () => {
       try {
         const response = await fetch(`/api/sensordata?plant=${selectedPlant}`);
@@ -41,7 +41,6 @@ export default function Home() {
       }
     };
 
-    // Fetch the real-time sensor data and status
     const fetchData = async () => {
       try {
         const response = await fetch('/api/sensordata');
@@ -64,7 +63,6 @@ export default function Home() {
 
   const handlePlantSelection = async (plantName) => {
     try {
-      // Send the plant selection to the backend
       const response = await fetch('/api/sensordata', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -118,11 +116,9 @@ export default function Home() {
     }
   };
 
-  // Conditional Rendering: Show Welcome Page or Dashboard
   if (!selectedPlant) {
     return (
       <main className="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col items-center justify-center p-6 space-y-8">
-        {/* Welcome Box */}
         <div className="w-full max-w-2xl bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 text-center">
           <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">Welcome to Your Smart Garden</h1>
           <p className="text-gray-700 dark:text-gray-300 text-lg">
@@ -130,7 +126,6 @@ export default function Home() {
           </p>
         </div>
         
-        {/* Dropdown/Search Menu */}
         <div className="w-full max-w-sm bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 text-center">
           <select 
             className="w-full p-3 mb-4 rounded-lg border-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -154,7 +149,6 @@ export default function Home() {
     );
   }
 
-  // Dashboard View
   const { _id, timestamp, pump, light, tds, distance, ...sensors } = sensorData;
   const { light_pwm_cycle, ...idealRanges } = idealConditions || {};
 
@@ -166,35 +160,44 @@ export default function Home() {
           Last updated: {lastUpdated}
         </p>
 
-        {/* Sensor Status Section */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {Object.keys(sensors).map(key => {
             const value = sensors[key];
             const idealRange = idealRanges?.[key];
             const status = sensorStatus[key] || "Loading...";
-            const statusColor = status === "IDEAL" ? "text-green-500" : "text-red-500";
-            const valueDisplay = value !== null ? (typeof value === 'number' ? parseFloat(value).toFixed(2) : value) : "Loading...";
-
+            
+            // Determine status and value display based on the sensor key
+            let statusColor = status === "IDEAL" ? "text-green-500" : "text-red-500";
+            let valueDisplay;
+            if (key === "water_sufficient") {
+              valueDisplay = value ? "IDEAL" : "TOO LOW";
+              statusColor = value ? "text-green-500" : "text-red-500";
+            } else {
+              valueDisplay = value !== null ? (typeof value === 'number' ? parseFloat(value).toFixed(2) : value) : "Loading...";
+            }
+            
             return (
               <div key={key} className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg text-center shadow-sm">
-                <div className="text-2xl font-semibold mb-2">{sensorNames[key] || key}</div>
+                <div className="text-2xl font-semibold mb-2">
+                  {sensorNames[key] || key}
+                </div>
+                
+                {/* Conditionally render value display for all sensors, including water_sufficient */}
                 <div className={`text-4xl font-extrabold mb-1 ${statusColor}`}>
                   {valueDisplay}
                 </div>
+                
                 {idealRange && (
                   <div className="text-xs text-gray-500 dark:text-gray-400">
                     Ideal: {idealRange.min || idealRange.ph_min}-{idealRange.max || idealRange.ph_max}
                   </div>
                 )}
-                <div className={`mt-2 font-bold ${statusColor}`}>
-                  {status}
-                </div>
+                
               </div>
             );
           })}
         </div>
         
-        {/* Abort Button */}
         <div className="mt-8 text-center">
           <button
             className="px-6 py-3 rounded-lg font-bold shadow-md bg-red-600 text-white hover:bg-red-700 transition"

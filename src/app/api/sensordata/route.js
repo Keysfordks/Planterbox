@@ -11,7 +11,6 @@ export async function POST(request) {
   const data = await request.json();
   console.log("Received data:", data);
 
-  // New logic to handle 'select_plant' action from frontend
   if (data.action === "select_plant" && data.selectedPlant) {
     try {
       await appStateCollection.updateOne(
@@ -32,7 +31,6 @@ export async function POST(request) {
     }
   }
 
-  // Check for the 'abort_plant' action
   if (data.action === "abort_plant") {
     try {
       await sensorCollection.deleteMany({});
@@ -49,7 +47,6 @@ export async function POST(request) {
     }
   }
 
-  // Handle incoming sensor data from ESP32
   if (data.temperature !== undefined || data.humidity !== undefined) {
     try {
       const result = await sensorCollection.insertOne({ ...data, timestamp: new Date() });
@@ -66,7 +63,6 @@ export async function POST(request) {
         status: 200,
         headers: { "Content-Type": "application/json" }
       });
-
     } catch (error) {
       console.error("Failed to save sensor data:", error);
       return new Response(JSON.stringify({ error: "Failed to save sensor data" }), {
@@ -76,7 +72,6 @@ export async function POST(request) {
     }
   }
 
-  // Handle other types of POST requests (manual controls from frontend)
   if (data.pump !== undefined || data.light !== undefined) {
     try {
       const updateDoc = { $set: { ...data } };
@@ -91,7 +86,6 @@ export async function POST(request) {
         status: 200,
         headers: { "Content-Type": "application/json" }
       });
-
     } catch (error) {
       console.error("Failed to update device commands:", error);
       return new Response(JSON.stringify({ error: "Failed to update device commands" }), {
@@ -154,12 +148,14 @@ export async function GET(request) {
             humidity: null,
             ph: null,
             ppm: null,
+            water_sufficient: null,
           },
           sensorStatus: {
             temperature: "Loading...",
             humidity: "Loading...",
             ph: "Loading...",
             ppm: "Loading...",
+            water_sufficient: "Loading...",
           },
           deviceCommands: {
             pump: false,
