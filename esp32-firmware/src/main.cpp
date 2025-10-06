@@ -52,7 +52,8 @@ PhDosingState phState = PH_IDLE;
 unsigned long ppmStateChangeTime = 0;
 unsigned long phStateChangeTime = 0;
 
-const unsigned long dosingDuration = 5000; // 5 seconds for each pump
+// *** UPDATED: Pump run time is now 2 seconds (2000 ms) ***
+const unsigned long dosingDuration = 2000; // 2 seconds for each pump
 const unsigned long delayDuration = 2000; // 2-second delay between pumps
 
 DHT dht(DHTPIN, DHTTYPE);
@@ -122,7 +123,6 @@ void readPhSensor() {
   // --- pH Calculation using a standard approximation for these modules ---
   // The sensor module typically outputs ~2.5V at pH 7.0.
   // A common, simplified formula is: pH = Offset - Slope * Voltage
-  // Offset is around 21.34, Slope is around 3.57
   
   // You might need to adjust these based on calibration for true accuracy
   // but these are better starting values than 0.18 and the old offset.
@@ -276,6 +276,7 @@ void loop() {
         bool ppm_b_pump_cmd = doc["ppm_b_pump"] | false;
         controlGrowLight(lightBrightness);
         
+        // PH Pump Control: Only act if currently IDLE
         if (ph_up_pump_cmd && phState == PH_IDLE) {
           phState = PH_DOSING_UP;
           phStateChangeTime = millis();
@@ -285,14 +286,19 @@ void loop() {
           phStateChangeTime = millis();
           digitalWrite(PH_DOWN_PUMP_PIN, HIGH);
         } else if (phState == PH_IDLE) {
+          // If server didn't send a command AND we are IDLE, ensure pumps are off
           digitalWrite(PH_UP_PUMP_PIN, LOW);
           digitalWrite(PH_DOWN_PUMP_PIN, LOW);
         }
+
+        // PPM Pump Control: Only act if currently IDLE
         if (ppm_a_pump_cmd && ppm_b_pump_cmd && ppmState == PPM_IDLE) {
+          // Server sends both true to initiate the A-delay-B sequence
           ppmState = PPM_DOSING_A;
           ppmStateChangeTime = millis();
           digitalWrite(PPM_A_PUMP_PIN, HIGH);
         } else if (ppmState == PPM_IDLE) {
+          // If server didn't send a command AND we are IDLE, ensure pumps are off
           digitalWrite(PPM_A_PUMP_PIN, LOW);
           digitalWrite(PPM_B_PUMP_PIN, LOW);
         }
@@ -309,5 +315,6 @@ void loop() {
     Serial.println("WiFi Disconnected");
   }
 
-  delay(5000);
+  // The 5-second delay is adequate for frequent sensor reads
+  delay(5000); 
 }
