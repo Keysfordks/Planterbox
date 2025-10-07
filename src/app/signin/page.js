@@ -4,7 +4,7 @@ import { signIn } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button, Card, Alert, Typography } from 'antd';
-import { GoogleOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { GoogleOutlined, ArrowLeftOutlined, GithubOutlined } from '@ant-design/icons';
 import styles from '../../styles/signin.module.css';
 
 const { Title, Text } = Typography;
@@ -60,7 +60,16 @@ export default function SignInPage() {
           >
             Continue with Google
           </Button>
-
+          <Button
+            type="primary"
+            size="large"
+            icon={<GithubOutlined />}
+            onClick={() => signIn('github', { callbackUrl: '/dashboard' })}
+            block
+            className={styles.googleButton}
+          >
+            Continue with GitHub
+          </Button>
           <Text type="secondary" className={styles.terms}>
             By signing in, you agree to our Terms of Service and Privacy Policy.
           </Text>
