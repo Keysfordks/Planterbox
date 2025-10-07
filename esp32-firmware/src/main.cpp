@@ -4,11 +4,12 @@
 #include <DHT.h>
 #include <Adafruit_Sensor.h>
 #include <ArduinoJson.h>
+#include <cstdlib>
 
-const char* ssid = "SockMnky";
-const char* password = "04072024";
+const char* ssid = getenv(SSID);
+const char* password = getenv(PASSWORD);
 
-const char* serverName = "http://192.168.1.203:3000/api/sensordata"; // Your PC's IP
+const char* serverName = "http://192.168.1.83:3000/api/sensordata"; // Your PC's IP
 
 // Define pin for the DHT11
 #define DHTPIN 4

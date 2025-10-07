@@ -1,0 +1,79 @@
+.container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.wrapper {
+  max-width: 28rem;
+  width: 100%;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.logo {
+  display: inline-block;
+  font-size: 2.5rem;
+  font-weight: bold;
+  color: white;
+  text-decoration: none;
+  margin-bottom: 0.5rem;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.subtitle {
+  color: rgba(255, 255, 255, 0.95) !important;
+  font-size: 1.125rem;
+  display: block;
+  margin-top: 0.5rem;
+}
+
+.card {
+  border-radius: 16px !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2) !important;
+  padding: 2.5rem !important;
+}
+
+.googleButton {
+  height: 3rem;
+  font-size: 1rem;
+  font-weight: 500;
+  margin-bottom: 1rem;
+}
+
+.terms {
+  display: block;
+  text-align: center;
+  font-size: 0.875rem;
+  margin-top: 1.5rem;
+}
+
+.backLink {
+  margin-top: 1.5rem;
+  text-align: center;
+}
+
+.backButton {
+  color: white !important;
+  font-size: 1rem;
+}
+
+.backButton:hover {
+  opacity: 0.8;
+}
+
+@media (max-width: 640px) {
+  .logo {
+    font-size: 2rem;
+  }
+
+  .card {
+    padding: 2rem !important;
+  }
+}
