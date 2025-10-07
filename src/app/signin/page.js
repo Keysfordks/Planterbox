@@ -6,10 +6,11 @@ import Link from 'next/link';
 import { Button, Card, Alert, Typography } from 'antd';
 import { GoogleOutlined, ArrowLeftOutlined, GithubOutlined } from '@ant-design/icons';
 import styles from '../../styles/signin.module.css';
+import { Suspense } from 'react';
 
 const { Title, Text } = Typography;
 
-export default function SignInPage() {
+function SignInContent() {
   const searchParams = useSearchParams();
   const error = searchParams.get('error');
 
@@ -84,5 +85,13 @@ export default function SignInPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <SignInContent />
+    </Suspense>
   );
 }
