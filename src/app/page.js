@@ -1,56 +1,70 @@
-'use client';
+import Link from 'next/link';
+import { Button, Card } from 'antd';
+import { CheckCircleOutlined, SafetyOutlined, ThunderboltOutlined, ArrowRightOutlined } from '@ant-design/icons';
+import { auth } from './api/auth/[...nextauth]/route';
+import Navbar from '../components/navbar';
+import styles from '../styles/home.module.css';
 
-import { useState, useEffect } from "react";
+export default async function HomePage() {
+  const session = await auth();
 
-export default function Home() {
-  const [temperature, setTemperature] = useState(null);
-  const [humidity, setHumidity] = useState(null);
-  const [lastUpdated, setLastUpdated] = useState(null);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await fetch('/api/sensordata');
-        const data = await response.json();
-        setTemperature(data.temperature);
-        setHumidity(data.humidity);
-        setLastUpdated(new Date().toLocaleTimeString());
-      } catch (error) {
-        console.error("Failed to fetch data:", error);
-      }
-    };
-
-    // Fetch data initially and then every 3 seconds
-    fetchData();
-    const intervalId = setInterval(fetchData, 3000);
-
-    // Clean up the interval when the component unmounts
-    return () => clearInterval(intervalId);
-  }, []);
+  const features = [
+    {
+      icon: <CheckCircleOutlined />,
+      title: 'Easy to Use',
+      description: 'Simple and intuitive interface for everyone.',
+    },
+    {
+      icon: <SafetyOutlined />,
+      title: 'Secure',
+      description: 'Your data is protected with OAuth authentication.',
+    },
+    {
+      icon: <ThunderboltOutlined />,
+      title: 'Fast',
+      description: 'Lightning-fast performance and real-time updates.',
+    },
+  ];
 
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-sans">
-      <main className="flex flex-col gap-8 row-start-2 items-center">
-        <h1 className="text-4xl font-bold text-center sm:text-left">
-          Planter Box Sensor Data
-        </h1>
-        <div className="flex flex-col gap-4 text-center sm:text-left">
-          <div className="p-6 bg-gray-100 dark:bg-gray-800 rounded-lg shadow-md">
-            <h2 className="text-2xl font-semibold mb-2">Temperature</h2>
-            <p className="text-5xl font-extrabold text-blue-600 dark:text-blue-400">
-              {temperature !== null ? `${temperature}°C` : 'Loading...'}
-            </p>
+    <div className={styles.container}>
+      <Navbar session={session} />
+
+      <main className={styles.main}>
+        <div className={styles.hero}>
+          <h1 className={styles.heroTitle}>
+            Welcome to <span className={styles.heroTitleAccent}>PlanterBox</span>
+          </h1>
+          <p className={styles.heroDescription}>
+            Your personal dashboard for managing projects, tracking progress, and staying organized.
+          </p>
+          
+          <div className={styles.ctaContainer}>
+            {!session ? (
+              <Link href="/signin">
+                <Button type="primary" size="large" icon={<ArrowRightOutlined />} className={styles.ctaButton}>
+                  Get Started
+                </Button>
+              </Link>
+            ) : (
+              <Link href="/dashboard">
+                <Button type="primary" size="large" icon={<ArrowRightOutlined />} className={styles.ctaButton}>
+                  Go to Dashboard
+                </Button>
+              </Link>
+            )}
           </div>
-          <div className="p-6 bg-gray-100 dark:bg-gray-800 rounded-lg shadow-md">
-            <h2 className="text-2xl font-semibold mb-2">Humidity</h2>
-            <p className="text-5xl font-extrabold text-green-600 dark:text-green-400">
-              {humidity !== null ? `${humidity}%` : 'Loading...'}
-            </p>
+
+          <div className={styles.features}>
+            {features.map((feature, index) => (
+              <Card key={index} className={styles.featureCard}>
+                <div className={styles.featureIcon}>{feature.icon}</div>
+                <h3 className={styles.featureTitle}>{feature.title}</h3>
+                <p className={styles.featureDescription}>{feature.description}</p>
+              </Card>
+            ))}
           </div>
         </div>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
-          Last updated: {lastUpdated !== null ? lastUpdated : 'Never'}
-        </p>
       </main>
     </div>
   );
