@@ -10,25 +10,25 @@ const char* password = "04072024";
 
 const char* serverName = "http://192.168.1.203:3000/api/sensordata"; // Your PC's IP
 
-#define DHTPIN 4
+#define DHTPIN 33
 #define DHTTYPE DHT11
 
-#define TRIG_PIN 5
-#define ECHO_PIN 18
+#define TRIG_PIN 35
+#define ECHO_PIN 34
 
-#define PPM_SENSOR_PIN 34
+#define PPM_SENSOR_PIN 25
 
-#define PH_SENSOR_PIN 33
+#define PH_SENSOR_PIN 26
 
-#define WATER_SENSOR_PIN 35 
+#define WATER_SENSOR_PIN 32
 const int WATER_THRESHOLD = 600;
 
-#define LIGHT_PIN 26
+#define LIGHT_PIN 15
 
-#define PH_UP_PUMP_PIN 19
-#define PH_DOWN_PUMP_PIN 21
-#define PPM_A_PUMP_PIN 22
-#define PPM_B_PUMP_PIN 23
+#define PH_UP_PUMP_PIN 21
+#define PH_DOWN_PUMP_PIN 19
+#define PPM_A_PUMP_PIN 18
+#define PPM_B_PUMP_PIN 5
 
 const int ledChannel = 0;
 const int ledFreq = 5000;
@@ -124,8 +124,6 @@ void readPhSensor() {
   // The sensor module typically outputs ~2.5V at pH 7.0.
   // A common, simplified formula is: pH = Offset - Slope * Voltage
   
-  // You might need to adjust these based on calibration for true accuracy
-  // but these are better starting values than 0.18 and the old offset.
   const float PH_SLOPE = 3.57; 
   const float PH_OFFSET = 21.34;
 
