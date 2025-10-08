@@ -9,6 +9,88 @@ const isWithinRange = (value, min, max) => {
 // DOSING_LOCKOUT_MS is reduced to 60 seconds (60000 ms)
 const DOSING_LOCKOUT_MS = 60000; 
 
+// --- UPDATED: Function to calculate dynamic PWM brightness based on time and cycle hours ---
+function calculateLightBrightness(cycleHours) {
+    // Ramp up/down period is set to 1 hour (60 minutes)
+    const RAMP_PERIOD_MINUTES = 60; 
+    const MAX_BRIGHTNESS = 255;
+    
+    // Get current time. For consistency, we'll use a standard local clock (Node.js clock).
+    const now = new Date();
+    // Use the current hour and minute for precise calculation
+    const currentMinuteOfDay = now.getHours() * 60 + now.getMinutes();
+
+    // We assume the light cycle starts at a natural "sunrise" time, e.g., 7 AM.
+    const START_HOUR = 7; 
+    const START_MINUTE = START_HOUR * 60; 
+
+    const totalOnMinutes = cycleHours * 60;
+    
+    // Calculate the minute markers for the entire cycle
+    const SUNRISE_END_MINUTE = (START_MINUTE + RAMP_PERIOD_MINUTES) % (24 * 60);
+    const DAYTIME_END_MINUTE = (START_MINUTE + totalOnMinutes - RAMP_PERIOD_MINUTES) % (24 * 60);
+    const SUNSET_END_MINUTE = (START_MINUTE + totalOnMinutes) % (24 * 60);
+    
+    // The core full-brightness period starts after ramp-up and ends before ramp-down
+    const fullPowerMinutes = totalOnMinutes - (2 * RAMP_PERIOD_MINUTES);
+
+
+    let brightness = 0;
+    let cycleState = "NIGHT";
+
+    if (cycleHours < 2) {
+        // Simple ON/OFF for cycles < 2 hours (no meaningful ramp period)
+        if (currentMinuteOfDay >= START_MINUTE && currentMinuteOfDay < SUNSET_END_MINUTE) {
+            brightness = MAX_BRIGHTNESS;
+            cycleState = "DAY";
+        }
+    } else {
+        // --- Day Cycle Logic (Centered on START_HOUR) ---
+
+        // Helper to check if time is within a span that might cross midnight
+        const isTimeInSpan = (start, end) => {
+            if (start < end) {
+                return currentMinuteOfDay >= start && currentMinuteOfDay < end;
+            } else {
+                // Span crosses midnight (e.g., 23:00 to 01:00)
+                return currentMinuteOfDay >= start || currentMinuteOfDay < end;
+            }
+        };
+
+        // 1. Sunrise Ramp Up (START_MINUTE to SUNRISE_END_MINUTE)
+        if (isTimeInSpan(START_MINUTE, SUNRISE_END_MINUTE)) {
+            let minutesIntoRamp = (currentMinuteOfDay + (24 * 60) - START_MINUTE) % (24 * 60);
+            brightness = Math.round((minutesIntoRamp / RAMP_PERIOD_MINUTES) * MAX_BRIGHTNESS);
+            cycleState = "SUNRISE";
+
+        // 2. Full Power (SUNRISE_END_MINUTE to DAYTIME_END_MINUTE)
+        } else if (isTimeInSpan(SUNRISE_END_MINUTE, DAYTIME_END_MINUTE)) {
+            brightness = MAX_BRIGHTNESS;
+            cycleState = "DAY";
+            
+        // 3. Sunset Ramp Down (DAYTIME_END_MINUTE to SUNSET_END_MINUTE)
+        } else if (isTimeInSpan(DAYTIME_END_MINUTE, SUNSET_END_MINUTE)) {
+            let minutesUntilOff = (SUNSET_END_MINUTE + (24 * 60) - currentMinuteOfDay) % (24 * 60);
+            if (minutesUntilOff === 0) minutesUntilOff = 24 * 60; // Handle minute 0
+            
+            brightness = Math.round((minutesUntilOff / RAMP_PERIOD_MINUTES) * MAX_BRIGHTNESS);
+            cycleState = "SUNSET";
+
+        // 4. Nighttime (All other times)
+        } else {
+            brightness = 0;
+            cycleState = "NIGHT";
+        }
+    }
+    
+    // Ensure brightness is clamped between 0 and 255
+    brightness = Math.min(MAX_BRIGHTNESS, Math.max(0, brightness));
+
+    return { brightness, cycleState, startHour: START_HOUR, cycleHours };
+}
+// -----------------------------------------------------------------------
+
+
 // This function processes the sensor data and plant selection
 export async function processSensorData(latestData, selectedPlant, selectedStage) {
   const client = await clientPromise;
@@ -35,6 +117,7 @@ export async function processSensorData(latestData, selectedPlant, selectedStage
     ph_down_pump: false,
     ppm_a_pump: false,
     ppm_b_pump: false,
+    light_motor_cmd: "STOP",
   };
 
   let sensorStatus = {
@@ -42,11 +125,24 @@ export async function processSensorData(latestData, selectedPlant, selectedStage
     humidity: "Loading...",
     ph: "Loading...",
     ppm: "Loading...",
+    light_distance: "Loading..."
   };
 
+  // --- Light Cycle Logic ---
+  // light_pwm_cycle is now treated as HOURS of light required.
+  const lightCycleHours = idealConditions?.ideal_conditions?.light_pwm_cycle || 12; // Default to 12 hours
+  const lightControl = calculateLightBrightness(lightCycleHours);
+  deviceCommands.light = lightControl.brightness;
+  sensorStatus.light_cycle_status = {
+    status: lightControl.cycleState,
+    message: `${lightControl.brightness}/255 PWM. Target: ${lightControl.cycleHours} hrs/day, starting at ${lightControl.startHour}:00.`,
+    value: lightControl.brightness
+  };
+  // -------------------------
+
   if (latestData && idealConditions) {
-    const { temperature, humidity, ph, ppm } = latestData;
-    const { temp_min, temp_max, humidity_min, humidity_max, ph_min, ph_max, ppm_min, ppm_max, light_pwm_cycle } = idealConditions.ideal_conditions;
+    const { temperature, humidity, ph, ppm, distance } = latestData; // Destructure distance
+    const { temp_min, temp_max, humidity_min, humidity_max, ph_min, ph_max, ppm_min, ppm_max, ideal_light_distance_cm, light_distance_tolerance_cm } = idealConditions.ideal_conditions;
 
     // Check if values are within the ideal ranges and set status
     sensorStatus.temperature = isWithinRange(temperature, temp_min, temp_max) ? "IDEAL" : "NOT IDEAL";
@@ -61,14 +157,51 @@ export async function processSensorData(latestData, selectedPlant, selectedStage
     }
 
 
-    // Generate device commands based on ideal conditions
-    deviceCommands.light = light_pwm_cycle;
+    // --- Light Motor Control Logic ---
+    const light_target_distance = ideal_light_distance_cm;
+    const light_tolerance = light_distance_tolerance_cm || 2; // Default to 2cm tolerance
+
+    if (distance !== null && distance !== undefined && light_target_distance !== null && light_target_distance !== undefined) {
+        
+        const min_distance = light_target_distance - light_tolerance;
+        const max_distance = light_target_distance + light_tolerance;
+
+        if (distance > max_distance) {
+            deviceCommands.light_motor_cmd = "DOWN"; 
+            sensorStatus.light_distance = { 
+                status: "ADJUSTING",
+                message: `Distance (${distance}cm) is too high. Moving light down. Target: ${light_target_distance}±${light_tolerance}cm.`,
+                value: distance 
+            };
+
+        } else if (distance < min_distance) {
+            deviceCommands.light_motor_cmd = "UP"; 
+            sensorStatus.light_distance = { 
+                status: "ADJUSTING",
+                message: `Distance (${distance}cm) is too low. Moving light up. Target: ${light_target_distance}±${light_tolerance}cm.`,
+                value: distance 
+            };
+
+        } else {
+            deviceCommands.light_motor_cmd = "STOP";
+            sensorStatus.light_distance = { 
+                status: "OK",
+                message: `Distance (${distance}cm) is within target range. Target: ${light_target_distance}±${light_tolerance}cm.`,
+                value: distance
+            };
+        }
+    } else {
+        sensorStatus.light_distance = { 
+            status: "N/A", 
+            message: "Missing distance data or target profile.",
+            value: distance 
+        };
+    }
     
-    // Closed-Loop Dosing Check
+    // Closed-Loop Dosing Check 
     if (!isDosingLocked) {
         let doseIssued = false;
 
-        // 1. pH Pump control logic (pH takes priority)
         if (ph < ph_min) {
             deviceCommands.ph_up_pump = true;
             doseIssued = true;
@@ -77,15 +210,12 @@ export async function processSensorData(latestData, selectedPlant, selectedStage
             doseIssued = true;
         }
 
-        // 2. PPM Pump control logic (only check if no pH dose was issued)
-        // *** CRITICAL Only dose if ppm is LOW. If ppm > ppm_max (DILUTE_WATER), keep pumps OFF. ***
         if (!doseIssued && ppm < ppm_min) {
             deviceCommands.ppm_a_pump = true;
             deviceCommands.ppm_b_pump = true;
             doseIssued = true;
         }
         
-        // 3. Update the lastDoseTimestamp if a dose was issued
         if (doseIssued) {
              await appStateCollection.updateOne(
                 { state_name: "lastDoseTimestamp" },
@@ -95,11 +225,10 @@ export async function processSensorData(latestData, selectedPlant, selectedStage
                 } },
                 { upsert: true }
             );
-             console.log("Dose Issued. System now in lockout for 30 seconds.");
+             console.log("Dose Issued. System now in lockout for 60 seconds.");
         }
 
     } else {
-        // Log that dosing is skipped because of the lockout
         console.log(`Dosing skipped: System locked until ${new Date(lastDoseTime + DOSING_LOCKOUT_MS).toLocaleTimeString()}`);
     }
 

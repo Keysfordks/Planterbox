@@ -109,7 +109,8 @@ export async function POST(request) {
     } catch (error) {
       console.error("Failed to insert or process data:", error);
       // Return a response even on error so ESP32 doesn't time out
-      return new Response(JSON.stringify({ light: 0, ph_up_pump: false, ph_down_pump: false, ppm_a_pump: false, ppm_b_pump: false }), { 
+      // --- UPDATED: Added light_motor_cmd to the error response ---
+      return new Response(JSON.stringify({ light: 0, ph_up_pump: false, ph_down_pump: false, ppm_a_pump: false, ppm_b_pump: false, light_motor_cmd: "STOP" }), { 
           status: 500,
           headers: { "Content-Type": "application/json" }
       });
@@ -160,9 +161,10 @@ export async function GET(request) {
     let sensorDataToReturn;
     
     if (latestData) {
-        // Destructure out the unused fields (tds, distance) and keep everything else
-        const { tds, distance, ...dataWithoutUnusedSensors } = latestData;
-        sensorDataToReturn = dataWithoutUnusedSensors;
+        // --- UPDATED: Do NOT destructure out 'distance' ---
+        // Destructure out the unused fields (tds) and keep everything else
+        const { tds, ...dataWithAllUsedSensors } = latestData;
+        sensorDataToReturn = dataWithAllUsedSensors;
     } else {
         // Return null/default values for the frontend to show "Loading..." or "N/A"
         sensorDataToReturn = {
@@ -171,6 +173,7 @@ export async function GET(request) {
             ph: null,
             ppm: null,
             water_sufficient: null,
+            distance: null, // Ensure 'distance' is here too for consistency
         };
     }
 

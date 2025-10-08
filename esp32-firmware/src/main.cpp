@@ -30,9 +30,22 @@ const int WATER_THRESHOLD = 600;
 #define PPM_A_PUMP_PIN 18
 #define PPM_B_PUMP_PIN 5
 
+// --- Stepper Motor Pins for Light Adjustment ---
+// A -> IN1 -> Pin 27
+// B -> IN2 -> Pin 14
+// C -> IN3 -> Pin 12
+// D -> IN4 -> Pin 13
+#define MOTOR_IN1 27 
+#define MOTOR_IN2 14 
+#define MOTOR_IN3 12 
+#define MOTOR_IN4 13 
+// Global variable to keep track of the motor's current step
+int motorStep = 0;
+// ---------------------------------------------------
+
 const int ledChannel = 0;
 const int ledFreq = 5000;
-const int ledResolution = 8;
+const int ledResolution = 8; // 8-bit resolution (0-255)
 
 enum PpmDosingState {
   PPM_IDLE,
@@ -52,7 +65,7 @@ PhDosingState phState = PH_IDLE;
 unsigned long ppmStateChangeTime = 0;
 unsigned long phStateChangeTime = 0;
 
-// *** UPDATED: Pump run time is now 2 seconds (2000 ms) ***
+// *** Pump run time is 2 seconds (2000 ms) ***
 const unsigned long dosingDuration = 2000; // 2 seconds for each pump
 const unsigned long delayDuration = 2000; // 2-second delay between pumps
 
@@ -92,6 +105,53 @@ void readUltrasonic() {
   }
 }
 
+// --- Stepper Motor Control Functions ---
+
+void stopMotor() {
+    digitalWrite(MOTOR_IN1, LOW);
+    digitalWrite(MOTOR_IN2, LOW);
+    digitalWrite(MOTOR_IN3, LOW);
+    digitalWrite(MOTOR_IN4, LOW);
+}
+
+void stepMotor(bool isUp) {
+    if (isUp) { 
+        motorStep = (motorStep + 1) % 4; 
+    } else { 
+        motorStep = (motorStep - 1 + 4) % 4;
+    }
+
+    // Set the coil phases based on the new step (4-step sequence)
+    switch (motorStep) {
+        case 0: // Step AB: 1,1,0,0
+            digitalWrite(MOTOR_IN1, HIGH);
+            digitalWrite(MOTOR_IN2, HIGH);
+            digitalWrite(MOTOR_IN3, LOW);
+            digitalWrite(MOTOR_IN4, LOW);
+            break;
+        case 1: // Step BC: 0,1,1,0
+            digitalWrite(MOTOR_IN1, LOW);
+            digitalWrite(MOTOR_IN2, HIGH);
+            digitalWrite(MOTOR_IN3, HIGH);
+            digitalWrite(MOTOR_IN4, LOW);
+            break;
+        case 2: // Step CD: 0,0,1,1
+            digitalWrite(MOTOR_IN1, LOW);
+            digitalWrite(MOTOR_IN2, LOW);
+            digitalWrite(MOTOR_IN3, HIGH);
+            digitalWrite(MOTOR_IN4, HIGH);
+            break;
+        case 3: // Step DA: 1,0,0,1
+            digitalWrite(MOTOR_IN1, HIGH);
+            digitalWrite(MOTOR_IN2, LOW);
+            digitalWrite(MOTOR_IN3, LOW);
+            digitalWrite(MOTOR_IN4, HIGH);
+            break;
+    }
+}
+// ---------------------------------------------
+
+
 void readPpmSensor() {
   long sumAnalogValue = 0;
   for (int i = 0; i < 10; i++) {
@@ -110,30 +170,22 @@ void readPpmSensor() {
 
 void readPhSensor() {
   long sumAnalog = 0;
-  const int numSamples = 30; // Increased samples for better stability
+  const int numSamples = 30; 
   for (int i = 0; i < numSamples; i++) {
     sumAnalog += analogRead(PH_SENSOR_PIN);
     delay(10);
   }
   float avgAnalog = sumAnalog / (float)numSamples;
-  // Convert analog reading to voltage (3.3V reference)
-  // Voltage at PH_SENSOR_PIN = avgAnalog * (3.3 / 4096.0)
   float voltage = avgAnalog * 3.3 / 4096.0;
 
-  // --- pH Calculation using a standard approximation for these modules ---
-  // The sensor module typically outputs ~2.5V at pH 7.0.
-  // A common, simplified formula is: pH = Offset - Slope * Voltage
-  
   const float PH_SLOPE = 3.57; 
   const float PH_OFFSET = 21.34;
 
   float phValue = PH_OFFSET - (PH_SLOPE * voltage);
 
-  // Apply bounds
   if (phValue < 0) phValue = 0;
   if (phValue > 14) phValue = 14;
   
-  // Debug output
   Serial.print("Raw pH Analog: ");
   Serial.print(avgAnalog);
   Serial.print(" | Voltage: ");
@@ -154,13 +206,18 @@ void readWaterSensor() {
   Serial.println(isWaterSufficient ? "Yes" : "No");
 }
 
+// --- controlGrowLight function implementation ---
 void controlGrowLight(int brightness) {
   if (brightness < 0) brightness = 0;
   if (brightness > 255) brightness = 255;
-  ledcWrite(ledChannel, brightness);
-  Serial.print("Grow Light Brightness: ");
+  
+  // Use ledcWrite to set the PWM duty cycle
+  ledcWrite(ledChannel, brightness); 
+  
+  Serial.print("Grow Light Brightness (PWM 0-255): ");
   Serial.println(brightness);
 }
+// ---------------------------------------------------------------------------------
 
 void stopAllPumps() {
   digitalWrite(PH_UP_PUMP_PIN, LOW);
@@ -190,6 +247,14 @@ void setup() {
   pinMode(PPM_A_PUMP_PIN, OUTPUT);
   pinMode(PPM_B_PUMP_PIN, OUTPUT);
   
+  // --- Stepper Motor Pin Setup ---
+  pinMode(MOTOR_IN1, OUTPUT);
+  pinMode(MOTOR_IN2, OUTPUT);
+  pinMode(MOTOR_IN3, OUTPUT);
+  pinMode(MOTOR_IN4, OUTPUT);
+  stopMotor();
+  // ------------------------------------
+
   stopAllPumps();
 
   ledcSetup(ledChannel, ledFreq, ledResolution);
@@ -198,6 +263,7 @@ void setup() {
 }
 
 void loop() {
+  // --- Dosing state machine logic ---
   switch (ppmState) {
     case PPM_IDLE:
       break;
@@ -244,6 +310,7 @@ void loop() {
       }
       break;
   }
+  // -------------------------------------------------
 
   if (WiFi.status() == WL_CONNECTED) {
     sensorData.clear();
@@ -267,14 +334,28 @@ void loop() {
       StaticJsonDocument<200> doc;
       DeserializationError error = deserializeJson(doc, response);
       if (!error) {
-        int lightBrightness = doc["light"] | 0;
+        // --- Commands from Server ---
+        int lightBrightness = doc["light"] | 0; // The calculated PWM value 0-255
         bool ph_up_pump_cmd = doc["ph_up_pump"] | false;
         bool ph_down_pump_cmd = doc["ph_down_pump"] | false;
         bool ppm_a_pump_cmd = doc["ppm_a_pump"] | false;
         bool ppm_b_pump_cmd = doc["ppm_b_pump"] | false;
-        controlGrowLight(lightBrightness);
+        const char* light_motor_cmd = doc["light_motor_cmd"] | "STOP"; 
         
-        // PH Pump Control: Only act if currently IDLE
+        // --- Execute Light and Motor Commands ---
+        controlGrowLight(lightBrightness); // Execute the calculated PWM brightness
+        
+        if (strcmp(light_motor_cmd, "UP") == 0) {
+            stepMotor(true); 
+            delay(5); 
+        } else if (strcmp(light_motor_cmd, "DOWN") == 0) {
+            stepMotor(false);
+            delay(5);
+        } else {
+            stopMotor();
+        }
+        
+        // --- Pump Control Logic ---
         if (ph_up_pump_cmd && phState == PH_IDLE) {
           phState = PH_DOSING_UP;
           phStateChangeTime = millis();
@@ -284,22 +365,19 @@ void loop() {
           phStateChangeTime = millis();
           digitalWrite(PH_DOWN_PUMP_PIN, HIGH);
         } else if (phState == PH_IDLE) {
-          // If server didn't send a command AND we are IDLE, ensure pumps are off
           digitalWrite(PH_UP_PUMP_PIN, LOW);
           digitalWrite(PH_DOWN_PUMP_PIN, LOW);
         }
 
-        // PPM Pump Control: Only act if currently IDLE
         if (ppm_a_pump_cmd && ppm_b_pump_cmd && ppmState == PPM_IDLE) {
-          // Server sends both true to initiate the A-delay-B sequence
           ppmState = PPM_DOSING_A;
           ppmStateChangeTime = millis();
           digitalWrite(PPM_A_PUMP_PIN, HIGH);
         } else if (ppmState == PPM_IDLE) {
-          // If server didn't send a command AND we are IDLE, ensure pumps are off
           digitalWrite(PPM_A_PUMP_PIN, LOW);
           digitalWrite(PPM_B_PUMP_PIN, LOW);
         }
+        // ----------------------------------------
       } else {
         Serial.print(F("deserializeJson() failed: "));
         Serial.println(error.f_str());
@@ -313,6 +391,5 @@ void loop() {
     Serial.println("WiFi Disconnected");
   }
 
-  // The 5-second delay is adequate for frequent sensor reads
   delay(5000); 
 }
