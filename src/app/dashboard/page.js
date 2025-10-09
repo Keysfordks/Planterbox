@@ -95,13 +95,11 @@ export default function DashboardPage() {
               <p className={styles.infoValue}>{session.user?.email || 'Not provided'}</p>
             </div>
             <div className={styles.infoItem}>
-              <p className={styles.infoLabel}>Account Type</p>
-              <p className={styles.infoValue}>Google OAuth</p>
+              <p className={styles.infoLabel}>Account ID</p>
+              
+              <p className={styles.infoValue}>{session.user.id}</p>
             </div>
-            <div className={styles.infoItem}>
-              <p className={styles.infoLabel}>Member Since</p>
-              <p className={styles.infoValue}>October 2024</p>
-            </div>
+
           </div>
         </Card>
 
