@@ -38,36 +38,21 @@ function SignInContent() {
           </Link>
           <Text className={styles.subtitle}>Sign in to your account</Text>
         </div>
-
         <Card className={styles.card}>
           {error && (
-            <Alert
-              message="Sign In Error"
-              description={getErrorMessage(error)}
-              type="error"
-              showIcon
-              closable
-              style={{ marginBottom: '1.5rem' }}
-            />
+            <Alert message="Sign In Error" description={getErrorMessage(error)} type="error" showIcon closable style={{ marginBottom: '1.5rem' }}/>
           )}
-
           <Button
-            type="primary"
-            size="large"
-            icon={<GoogleOutlined />}
+            type="primary" size="large" icon={<GoogleOutlined />}
             onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
-            block
-            className={styles.googleButton}
+            block className={styles.googleButton}
           >
             Continue with Google
           </Button>
           <Button
-            type="primary"
-            size="large"
-            icon={<GithubOutlined />}
+            type="primary" size="large" icon={<GithubOutlined />}
             onClick={() => signIn('github', { callbackUrl: '/dashboard' })}
-            block
-            className={styles.googleButton}
+            block className={styles.googleButton}
           >
             Continue with GitHub
           </Button>
@@ -75,7 +60,6 @@ function SignInContent() {
             By signing in, you agree to our Terms of Service and Privacy Policy.
           </Text>
         </Card>
-
         <div className={styles.backLink}>
           <Link href="/">
             <Button type="link" icon={<ArrowLeftOutlined />} className={styles.backButton}>

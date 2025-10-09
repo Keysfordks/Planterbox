@@ -1,0 +1,85 @@
+.plantCard {
+  border-radius: 16px;
+  padding: 1rem;
+  box-shadow: 0 4px 16px rgba(198, 198, 198, 0.2);
+  transition: all 0.3s;
+  border: 2px solid #c7c7c7;
+  width: 350px;
+}
+
+.plantCard:hover {
+  transform: translateY(-4px);
+  border-color: #47be75;
+}
+
+.cardHeader {
+  text-align: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #c0c0c0;
+}
+
+.plantTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  line-height: 1.4;
+}
+
+.stageTag {
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.25rem 1rem;
+  border-radius: 12px;
+}
+
+.sensorsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.sensorBox {
+  border-radius: 12px;
+  padding: 0.5rem;
+  text-align: center;
+  transition: all 0.3s;
+  border: 2px solid #d0d0d0;
+  align-content: center;
+}
+
+.sensorTitle {
+  font-weight: 550;
+  color: #95a5a6;
+  margin-bottom: 0.1rem;
+  letter-spacing: 0.2px;
+}
+
+.sensorValue {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #7eac75;
+  margin-bottom: 0.5rem;
+  font-family: Arial, sans-serif;
+}
+
+.sensorIdeal {
+  font-size: 0.8rem;
+  color: #7f8c8d;
+  margin: 0;
+}
+
+.cardFooter {
+  text-align: center;
+  padding-top: 1rem;
+  border-top: 2px solid #34495e;
+}
+
+.cardFooter button {
+  min-width: 150px;
+  height: 3rem;
+  font-weight: 600;
+  font-size: 1rem;
+  border-radius: 8px;
+}

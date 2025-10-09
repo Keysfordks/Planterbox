@@ -1,6 +1,6 @@
 .container {
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #71d464 0%, #4b8ea2 45%, #232b89 100%);
 }
 
 .main {
@@ -22,7 +22,7 @@
 }
 
 .heroTitleAccent {
-  color: #fbbf24;
+  color: #87ffa3;
 }
 
 .heroDescription {

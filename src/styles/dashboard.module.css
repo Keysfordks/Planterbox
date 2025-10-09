@@ -4,7 +4,7 @@
 }
 
 .main {
-  max-width: 1280px;
+  max-width: 1300px;
   margin: 0 auto;
   padding: 2rem 1.5rem;
 }
@@ -109,9 +109,39 @@
   font-weight: 500;
 }
 
+.plantsSection {
+  margin-bottom: 2rem;
+  border-radius: 12px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+}
+
+.plantsGrid {
+  padding: 1rem;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr); /* 3 columns */
+  gap: 0rem; /* 1rem gap between cards */
+}
+
+/* Responsive: 2 columns on tablets */
+@media (max-width: 1200px) {
+  .plantsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Responsive: 1 column on mobile */
+@media (max-width: 768px) {
+  .plantsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .accountCard {
   border-radius: 12px !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+  margin-bottom: 2rem;
+
 }
 
 .infoGrid {

@@ -1,67 +1,67 @@
-import { redirect } from 'next/navigation';
-import { auth } from '../api/auth/[...nextauth]/route';
-import { Card, Avatar, Button, Statistic, Timeline } from 'antd';
-import { 
-  FolderOutlined, 
-  CheckCircleOutlined, 
-  ClockCircleOutlined,
-  PlusOutlined,
-  UserAddOutlined,
-  BarChartOutlined,
-  RiseOutlined
-} from '@ant-design/icons';
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { Card, Avatar, Button, Spin, Empty, message } from 'antd';
+import { PlusOutlined, LoadingOutlined } from '@ant-design/icons';
 import Navbar from '../../components/navbar';
+import PlantCard from '../../components/plantCard';
+import AddPlantModal from '../../components/addPlantModal';
 import styles from '../../styles/dashboard.module.css';
 
-export default async function DashboardPage() {
-  const session = await auth();
+export default function DashboardPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const [plants, setPlants] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
 
-  if (!session) {
-    redirect('/signin');
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/signin');
+    }
+
+    if (status === 'authenticated') {
+      fetchPlants();
+    }
+  }, [status, router]);
+
+  const fetchPlants = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/plants');
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          message.error('Session expired. Please sign in again.');
+          router.push('/signin');
+          return;
+        }
+        throw new Error('Failed to fetch plants');
+      }
+
+      const data = await response.json();
+      setPlants(data.plants || []);
+    } catch (error) {
+      console.error('Error fetching plants:', error);
+      message.error('Failed to load plant profiles');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (status === 'loading') {
+    return (
+      <div className={styles.loadingContainer}>
+        <Spin size="large" />
+      </div>
+    );
   }
 
-  const activities = [
-    { 
-      color: 'green',
-      children: (
-        <>
-          <p className={styles.activityTitle}>Completed task</p>
-          <p className={styles.activityDesc}>Design homepage mockup</p>
-          <p className={styles.activityTime}>2 hours ago</p>
-        </>
-      )
-    },
-    { 
-      color: 'blue',
-      children: (
-        <>
-          <p className={styles.activityTitle}>Started project</p>
-          <p className={styles.activityDesc}>Mobile app development</p>
-          <p className={styles.activityTime}>5 hours ago</p>
-        </>
-      )
-    },
-    { 
-      color: 'purple',
-      children: (
-        <>
-          <p className={styles.activityTitle}>Updated milestone</p>
-          <p className={styles.activityDesc}>Q4 Planning</p>
-          <p className={styles.activityTime}>1 day ago</p>
-        </>
-      )
-    },
-    { 
-      color: 'gray',
-      children: (
-        <>
-          <p className={styles.activityTitle}>Added team member</p>
-          <p className={styles.activityDesc}>Sarah Johnson</p>
-          <p className={styles.activityTime}>2 days ago</p>
-        </>
-      )
-    },
-  ];
+  if (!session) {
+    return null;
+  }
 
   return (
     <div className={styles.container}>
@@ -84,91 +84,6 @@ export default async function DashboardPage() {
           </div>
         </Card>
 
-        <div className={styles.statsGrid}>
-          <Card>
-            <Statistic
-              title="Total Projects"
-              value={12}
-              prefix={<FolderOutlined />}
-              suffix={
-                <span className={styles.statSuffix}>
-                  <RiseOutlined /> 3 new
-                </span>
-              }
-            />
-          </Card>
-
-          <Card>
-            <Statistic
-              title="Tasks Completed"
-              value={48}
-              prefix={<CheckCircleOutlined />}
-              suffix={
-                <span className={styles.statSuffix}>
-                  <RiseOutlined /> 85%
-                </span>
-              }
-            />
-          </Card>
-
-          <Card>
-            <Statistic
-              title="Hours Logged"
-              value={127}
-              prefix={<ClockCircleOutlined />}
-              suffix={
-                <span className={styles.statSuffix}>
-                  <RiseOutlined /> 12%
-                </span>
-              }
-            />
-          </Card>
-        </div>
-
-        <div className={styles.contentGrid}>
-          <Card title="Recent Activity" className={styles.card}>
-            <Timeline items={activities} />
-          </Card>
-
-          <Card title="Quick Actions" className={styles.card}>
-            <div className={styles.actionsList}>
-              <Button 
-                type="primary" 
-                icon={<PlusOutlined />} 
-                size="large"
-                block
-                className={styles.actionButton}
-              >
-                Create New Project
-              </Button>
-              <Button 
-                icon={<PlusOutlined />} 
-                size="large"
-                block
-                className={styles.actionButton}
-              >
-                Add Task
-              </Button>
-              <Button 
-                icon={<UserAddOutlined />} 
-                size="large"
-                block
-                className={styles.actionButton}
-              >
-                Invite Team Member
-              </Button>
-              <Button 
-                icon={<BarChartOutlined />} 
-                size="large"
-                block
-                className={styles.actionButton}
-              >
-                View Reports
-              </Button>
-            </div>
-          </Card>
-        </div>
-
         <Card title="Account Information" className={styles.accountCard}>
           <div className={styles.infoGrid}>
             <div className={styles.infoItem}>
@@ -189,6 +104,53 @@ export default async function DashboardPage() {
             </div>
           </div>
         </Card>
+
+        <Card 
+          title="Plant Profiles" 
+          className={styles.plantsSection}
+          extra={
+            <Button 
+              type="primary" 
+              icon={<PlusOutlined />}
+              onClick={() => setShowAddModal(true)}
+            >
+              Add Plant
+            </Button>
+          }
+        >
+          {loading ? (
+            <div className={styles.loadingSection}>
+              <Spin size="large" indicator={<LoadingOutlined spin />} />
+              <p>Loading plant profiles...</p>
+            </div>
+          ) : plants.length === 0 ? (
+            <Empty 
+              description="No plant profiles yet"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+            >
+              <Button 
+                type="primary" 
+                icon={<PlusOutlined />}
+                onClick={() => setShowAddModal(true)}
+              >
+                Add Your First Plant
+              </Button>
+            </Empty>
+          ) : (
+            <div className={styles.plantsGrid}>
+              {plants.map((plant) => (
+                <PlantCard key={plant._id} plant={plant} />
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Add Plant Modal */}
+        <AddPlantModal
+          visible={showAddModal}
+          onClose={() => setShowAddModal(false)}
+          onSuccess={fetchPlants}
+        />
       </main>
     </div>
   );

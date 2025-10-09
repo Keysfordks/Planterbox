@@ -7,7 +7,6 @@ import styles from '../styles/home.module.css';
 
 export default async function HomePage() {
   const session = await auth();
-
   const features = [
     {
       icon: <CheckCircleOutlined />,
@@ -29,7 +28,6 @@ export default async function HomePage() {
   return (
     <div className={styles.container}>
       <Navbar session={session} />
-
       <main className={styles.main}>
         <div className={styles.hero}>
           <h1 className={styles.heroTitle}>
@@ -53,16 +51,6 @@ export default async function HomePage() {
                 </Button>
               </Link>
             )}
-          </div>
-
-          <div className={styles.features}>
-            {features.map((feature, index) => (
-              <Card key={index} className={styles.featureCard}>
-                <div className={styles.featureIcon}>{feature.icon}</div>
-                <h3 className={styles.featureTitle}>{feature.title}</h3>
-                <p className={styles.featureDescription}>{feature.description}</p>
-              </Card>
-            ))}
           </div>
         </div>
       </main>

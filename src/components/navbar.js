@@ -33,7 +33,7 @@ export default function Navbar({ session }) {
     <nav className={styles.nav}>
       <div className={styles.navInner}>
         <Link href="/" className={styles.logo}>
-          PlanterBox
+          Autoomated Plant Care System
         </Link>
         <div className={styles.navRight}>
           {session ? (
