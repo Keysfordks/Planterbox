@@ -1,10 +1,13 @@
 'use client';
 
-import { Card, Tag, Button } from 'antd';
+import { useState } from 'react';
+import { Card, Tag, Button, Modal, message } from 'antd';
+import { ExclamationCircleOutlined } from '@ant-design/icons';
 import styles from '../styles/plantcard.module.css';
 
-export default function PlantCard({ plant }) {
-  const { plant_name, stage, ideal_conditions } = plant;
+export default function PlantCard({ plant, onDelete }) {
+  const { _id, plant_name, stage, ideal_conditions } = plant;
+  const [deleting, setDeleting] = useState(false);
 
   const getStageColor = (stage) => {
     const colors = {
@@ -27,6 +30,45 @@ export default function PlantCard({ plant }) {
   const tempMax = conditions.temp_max || 'N/A';
   const humidityMin = conditions.humidity_min || 'N/A';
   const humidityMax = conditions.humidity_max || 'N/A';
+
+  const handleAbortPlant = () => {
+    console.log('Abort button clicked for plant:', _id); // Debug log
+    
+    Modal.confirm({
+      title: 'Abort Plant Profile?',
+      icon: <ExclamationCircleOutlined />,
+      content: `Are you sure you want to delete the ${plant_name} (${stage}) profile? This action cannot be undone.`,
+      okText: 'Yes, Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        console.log('Delete confirmed for:', _id); // Debug log
+        try {
+          setDeleting(true);
+          const response = await fetch(`/api/plants?id=${_id}`, {
+            method: 'DELETE',
+          });
+
+          console.log('Delete response:', response.status); // Debug log
+
+          if (!response.ok) {
+            throw new Error('Failed to delete plant');
+          }
+
+          message.success(`${plant_name} profile deleted successfully`);
+          
+          if (onDelete) {
+            onDelete();
+          }
+        } catch (error) {
+          console.error('Error deleting plant:', error);
+          message.error('Failed to delete plant profile');
+        } finally {
+          setDeleting(false);
+        }
+      },
+    });
+  };
 
   return (
     <div className={styles.plantCard}>
@@ -77,8 +119,13 @@ export default function PlantCard({ plant }) {
       </div>
 
       <div className={styles.cardFooter}>
-        <Button danger size="large">
-          Abort Plant
+        <Button 
+          danger 
+          size="large"
+          loading={deleting}
+          onClick={handleAbortPlant}
+        >
+          {deleting ? 'Deleting...' : 'Abort Plant'}
         </Button>
       </div>
     </div>

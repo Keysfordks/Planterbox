@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@ant-design/v5-patch-for-react-19": "^1.0.3",
-    "antd": "^5.27.4",
     "mongodb": "^6.19.0",
     "mongoose": "^8.18.1",
     "next": "^15.5.4",

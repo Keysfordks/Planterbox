@@ -139,7 +139,11 @@ export default function DashboardPage() {
           ) : (
             <div className={styles.plantsGrid}>
               {plants.map((plant) => (
-                <PlantCard key={plant._id} plant={plant} />
+                <PlantCard 
+                  key={plant._id} 
+                  plant={plant}
+                  onDelete={fetchPlants}
+                />
               ))}
             </div>
           )}
