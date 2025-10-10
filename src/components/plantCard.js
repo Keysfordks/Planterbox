@@ -32,6 +32,8 @@ export default function PlantCard({ plant, onDelete }) {
   const humidityMax = conditions.humidity_max || 'N/A';
 
   const handleAbortPlant = () => {
+    console.log('Abort button clicked for plant:', _id); // Debug log
+    
     Modal.confirm({
       title: 'Abort Plant Profile?',
       icon: <ExclamationCircleOutlined />,
@@ -40,11 +42,14 @@ export default function PlantCard({ plant, onDelete }) {
       okType: 'danger',
       cancelText: 'Cancel',
       onOk: async () => {
+        console.log('Delete confirmed for:', _id); // Debug log
         try {
           setDeleting(true);
           const response = await fetch(`/api/plants?id=${_id}`, {
             method: 'DELETE',
           });
+
+          console.log('Delete response:', response.status); // Debug log
 
           if (!response.ok) {
             throw new Error('Failed to delete plant');
@@ -69,7 +74,7 @@ export default function PlantCard({ plant, onDelete }) {
     <div className={styles.plantCard}>
       <div className={styles.cardHeader}>
         <h2 className={styles.plantTitle}>
-          {plant_name.charAt(0).toUpperCase() + plant_name.slice(1)}
+          {plant_name.charAt(0).toUpperCase() + plant_name.slice(1)} - {stage.charAt(0).toUpperCase() + stage.slice(1)}
         </h2>
         <Tag color={getStageColor(stage)} className={styles.stageTag}>
           {stage.toUpperCase()}
