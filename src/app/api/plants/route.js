@@ -3,34 +3,79 @@ import { ObjectId } from 'mongodb';
 import clientPromise from '../../../lib/mongodb';
 import { auth } from '../auth/[...nextauth]/route';
 
-// GET - Fetch all plant profiles for the authenticated user
+// GET - Fetch plant presets OR user's plants
 export async function GET(request) {
   try {
-    // Get session - pass request context
     const session = await auth();
-    
-    console.log('Session in GET:', session); // Debug log
-    
-    if (!session || !session.user?.id) {
-      console.log('No session found'); // Debug log
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { searchParams } = new URL(request.url);
+    const plantName = searchParams.get('plant');
+    const stage = searchParams.get('stage');
+    const presetsOnly = searchParams.get('presets');
 
     const client = await clientPromise;
     const db = client.db('planterbox');
-    
-    // Fetch only plants belonging to this user
+
+    // If requesting presets (templates without userId)
+    if (presetsOnly === 'true') {
+      // If plant and stage specified, return specific preset
+      if (plantName && stage) {
+        const preset = await db.collection('plant_profiles')
+          .findOne({ 
+            plant_name: plantName, 
+            stage: stage,
+            userId: { $exists: false } 
+          });
+
+        if (!preset) {
+          return NextResponse.json(
+            { error: 'Preset not found' },
+            { status: 404 }
+          );
+        }
+
+        return NextResponse.json({ 
+          ideal_conditions: preset.ideal_conditions 
+        }, { status: 200 });
+      }
+
+      // Otherwise, return list of unique plant types
+      const distinctPlantNames = await db.collection('plant_profiles')
+        .distinct('plant_name', { userId: { $exists: false } });
+
+      const presets = [];
+      for (const plantName of distinctPlantNames) {
+        const preset = await db.collection('plant_profiles')
+          .findOne({ 
+            plant_name: plantName, 
+            stage: 'seedling',
+            userId: { $exists: false } 
+          });
+        
+        if (preset) {
+          presets.push(preset);
+        }
+      }
+
+      console.log(`Found ${presets.length} unique plant presets`);
+      return NextResponse.json({ presets }, { status: 200 });
+    }
+
+    // Otherwise, fetch user's plants (requires authentication)
+    if (!session || !session.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const plants = await db.collection('plant_profiles')
       .find({ userId: session.user.id })
       .toArray();
 
-    console.log(`Found ${plants.length} plants for user ${session.user.id}`); // Debug log
-
+    console.log(`Found ${plants.length} plants for user ${session.user.id}`);
     return NextResponse.json({ plants }, { status: 200 });
+    
   } catch (error) {
-    console.error('Error fetching plants:', error);
+    console.error('Error in GET /api/plants:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch plants', details: error.message },
+      { error: 'Failed to fetch data', details: error.message },
       { status: 500 }
     );
   }
@@ -41,7 +86,7 @@ export async function POST(request) {
   try {
     const session = await auth();
     
-    console.log('Session in POST:', session); // Debug log
+    console.log('Session in POST:', session);
     
     if (!session || !session.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -68,7 +113,7 @@ export async function POST(request) {
       updatedAt: new Date()
     };
     
-    console.log('Creating plant for user:', session.user.id); // Debug log
+    console.log('Creating plant for user:', session.user.id);
     
     const result = await db.collection('plant_profiles').insertOne(plantData);
 

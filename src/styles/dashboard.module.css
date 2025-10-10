@@ -1,147 +1,74 @@
+/* Main Container */
 .container {
   min-height: 100vh;
-  background: #f5f5f5;
+  background-color: #f3f4f6;
 }
 
+.container :global(.dark) {
+  background-color: #111827;
+}
+
+/* Main Content Area */
 .main {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem;
+  gap: 2rem;
 }
 
+/* Loading Container */
+.loadingContainer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+/* Welcome Card */
 .welcomeCard {
-  margin-bottom: 2rem;
-  border-radius: 12px !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+  width: 100%;
+  max-width: 64rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 }
 
 .welcomeContent {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 1rem;
 }
 
 .avatar {
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
 }
 
 .welcomeTitle {
-  font-size: 1.75rem;
-  font-weight: 600;
-  color: #262626;
-  margin: 0 0 0.25rem 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+  color: #111827;
+}
+
+:global(.dark) .welcomeTitle {
+  color: #ffffff;
 }
 
 .welcomeEmail {
-  color: #8c8c8c;
-  margin: 0;
-  font-size: 1rem;
+  color: #6b7280;
+  margin: 0.25rem 0 0 0;
 }
 
-.statsGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
+:global(.dark) .welcomeEmail {
+  color: #9ca3af;
 }
 
-.statsGrid :global(.ant-card) {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.statsGrid :global(.ant-statistic-title) {
-  font-size: 0.875rem;
-  color: #8c8c8c;
-}
-
-.statsGrid :global(.ant-statistic-content) {
-  font-size: 2rem;
-  color: #262626;
-}
-
-.statSuffix {
-  font-size: 0.875rem;
-  color: #52c41a;
-  margin-left: 0.5rem;
-}
-
-.contentGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
-}
-
-.card {
-  border-radius: 12px !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
-}
-
-.activityTitle {
-  font-weight: 600;
-  color: #262626;
-  margin: 0 0 0.25rem 0;
-  font-size: 0.95rem;
-}
-
-.activityDesc {
-  color: #595959;
-  margin: 0 0 0.25rem 0;
-  font-size: 0.9rem;
-}
-
-.activityTime {
-  color: #bfbfbf;
-  margin: 0;
-  font-size: 0.8rem;
-}
-
-.actionsList {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.actionButton {
-  height: 3rem;
-  border-radius: 8px;
-  font-weight: 500;
-}
-
-.plantsSection {
-  margin-bottom: 2rem;
-  border-radius: 12px !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
-}
-
-.plantsGrid {
-  padding: 1rem;
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr); /* 3 columns */
-  gap: 1rem; /* 1rem gap between cards */
-}
-
-/* Responsive: 2 columns on tablets */
-@media (max-width: 1200px) {
-  .plantsGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-/* Responsive: 1 column on mobile */
-@media (max-width: 768px) {
-  .plantsGrid {
-    grid-template-columns: 1fr;
-  }
-}
-
+/* Account Card */
 .accountCard {
-  border-radius: 12px !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
-  margin-bottom: 2rem;
-
+  width: 100%;
+  max-width: 64rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 }
 
 .infoGrid {
@@ -151,48 +78,467 @@
 }
 
 .infoItem {
-  padding: 1rem;
-  background: #fafafa;
-  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
 }
 
 .infoLabel {
   font-size: 0.875rem;
-  color: #8c8c8c;
-  margin: 0 0 0.5rem 0;
-  font-weight: 500;
+  font-weight: 600;
+  color: #6b7280;
+  margin: 0 0 0.25rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+:global(.dark) .infoLabel {
+  color: #9ca3af;
 }
 
 .infoValue {
   font-size: 1rem;
-  color: #262626;
+  color: #111827;
   margin: 0;
-  font-weight: 500;
+}
+
+:global(.dark) .infoValue {
+  color: #ffffff;
+}
+
+/* Dashboard Card */
+.dashboardCard {
+  width: 100%;
+  max-width: 64rem;
+  background-color: #ffffff;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  padding: 2rem;
+}
+
+:global(.dark) .dashboardCard {
+  background-color: #1f2937;
+}
+
+.dashboardHeader {
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+.dashboardTitle {
+  font-size: 1.875rem;
+  font-weight: 700;
+  margin: 0;
+  color: #111827;
+}
+
+:global(.dark) .dashboardTitle {
+  color: #ffffff;
+}
+
+.lastUpdated {
+  text-align: center;
+  font-size: 0.875rem;
+  margin-bottom: 1.5rem;
+  color: #6b7280;
+}
+
+:global(.dark) .lastUpdated {
+  color: #9ca3af;
+}
+
+/* Sensor Cards Grid */
+.sensorGrid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+@media (min-width: 768px) {
+  .sensorGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .sensorGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.sensorCardWrapper {
+  position: relative;
+}
+
+.sensorCard {
+  background-color: #f9fafb;
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  text-align: center;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  height: 100%;
+}
+
+:global(.dark) .sensorCard {
+  background-color: #374151;
+}
+
+.sensorName {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #111827;
+}
+
+:global(.dark) .sensorName {
+  color: #ffffff;
+}
+
+.sensorValue {
+  font-size: 2.25rem;
+  font-weight: 800;
+  margin-bottom: 0.25rem;
+}
+
+.sensorValue.ideal {
+  color: #10b981;
+}
+
+.sensorValue.warning {
+  color: #ef4444;
+}
+
+.sensorValue.dilute {
+  color: #eab308;
+}
+
+.idealRange {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+:global(.dark) .idealRange {
+  color: #9ca3af;
+}
+
+/* PPM Warning */
+.ppmWarning {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -50px;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background-color: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+:global(.dark) .ppmWarning {
+  background-color: #7f1d1d;
+  border-color: #991b1b;
+}
+
+.ppmWarningIcon {
+  color: #ef4444;
+  height: 1.25rem;
+  width: 1.25rem;
+  flex-shrink: 0;
+}
+
+:global(.dark) .ppmWarningIcon {
+  color: #fca5a5;
+}
+
+.ppmWarningText {
+  color: #991b1b;
+  font-size: 0.875rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+:global(.dark) .ppmWarningText {
+  color: #fecaca;
+}
+
+/* Abort Button */
+.abortSection {
+  margin-top: 2rem;
+  text-align: center;
+}
+
+/* Utility Bar */
+.utilityBar {
+  width: 100%;
+  max-width: 64rem;
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
 }
 
 @media (max-width: 768px) {
-  .main {
-    padding: 1rem;
-  }
-
-  .statsGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .contentGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .infoGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .welcomeContent {
+  .utilityBar {
     flex-direction: column;
-    text-align: center;
   }
+}
 
-  .welcomeTitle {
-    font-size: 1.5rem;
+.utilityCardLeft {
+  max-width: 20rem;
+  margin-right: auto;
+}
+
+@media (max-width: 768px) {
+  .utilityCardLeft {
+    max-width: 100%;
+    margin-right: 0;
   }
+}
+
+.utilityCardRight {
+  max-width: 20rem;
+  margin-left: auto;
+}
+
+@media (max-width: 768px) {
+  .utilityCardRight {
+    max-width: 100%;
+    margin-left: 0;
+  }
+}
+
+.utilityCard {
+  padding: 1rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+:global(.dark) .utilityCard {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+.growthButton {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 700;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  background-color: #10b981;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.growthButton:hover:not(:disabled) {
+  background-color: #059669;
+}
+
+.growthButton:disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.growthButtonIcon {
+  height: 1rem;
+  width: 1rem;
+  margin-right: 0.5rem;
+}
+
+.stageUpdateCard {
+  padding: 1rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+:global(.dark) .stageUpdateCard {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+.stageUpdateLabel {
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+  color: #374151;
+}
+
+:global(.dark) .stageUpdateLabel {
+  color: #d1d5db;
+}
+
+.stageUpdateControls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.stageSelect {
+  flex-grow: 1;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+  background-color: #f9fafb;
+  color: #111827;
+  font-size: 0.875rem;
+}
+
+:global(.dark) .stageSelect {
+  border-color: #4b5563;
+  background-color: #374151;
+  color: #ffffff;
+}
+
+.stageUpdateButton {
+  flex-shrink: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  font-weight: 700;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  background-color: #3b82f6;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.stageUpdateButton:hover {
+  background-color: #2563eb;
+}
+
+.stageUpdateIcon {
+  height: 0.75rem;
+  width: 0.75rem;
+  margin-right: 0.25rem;
+}
+
+/* Graph Modal */
+.graphModal {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(4px);
+}
+
+.graphModalContent {
+  background-color: #ffffff;
+  border-radius: 0.75rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  width: 100%;
+  max-width: 48rem;
+  padding: 1.5rem;
+  position: relative;
+}
+
+:global(.dark) .graphModalContent {
+  background-color: #1f2937;
+}
+
+.graphModalClose {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  color: #6b7280;
+  background: none;
+  border: none;
+  font-size: 2rem;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.graphModalClose:hover {
+  color: #ef4444;
+}
+
+:global(.dark) .graphModalClose {
+  color: #9ca3af;
+}
+
+/* Growth Graph */
+.graphContainer {
+  padding: 1rem;
+}
+
+.graphTitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  text-align: center;
+  color: #111827;
+}
+
+:global(.dark) .graphTitle {
+  color: #ffffff;
+}
+
+.graphPlaceholder {
+  background-color: #f3f4f6;
+  height: 16rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  border: 2px dashed #9ca3af;
+  padding: 1rem;
+}
+
+:global(.dark) .graphPlaceholder {
+  background-color: #374151;
+}
+
+.graphPlaceholderTitle {
+  color: #6b7280;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.graphPlaceholderList {
+  font-size: 0.875rem;
+  color: #6b7280;
+  list-style: disc;
+  list-style-position: inside;
+}
+
+.graphFooter {
+  text-align: center;
+  margin-top: 1rem;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+:global(.dark) .graphFooter {
+  color: #9ca3af;
+}
+
+.graphEmpty {
+  text-align: center;
+  padding: 2.5rem;
+  color: #6b7280;
+}
+
+:global(.dark) .graphEmpty {
+  color: #9ca3af;
 }
