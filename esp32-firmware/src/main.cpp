@@ -264,56 +264,59 @@ void setup() {
 }
 
 void loop() {
-  // --- Dosing state machine logic ---
-  switch (ppmState) {
-    case PPM_IDLE:
-      break;
-    case PPM_DOSING_A:
-      if (millis() - ppmStateChangeTime >= dosingDuration) {
-        Serial.println("PPM A pump finished. Starting delay...");
-        digitalWrite(PPM_A_PUMP_PIN, LOW);
-        ppmState = PPM_DELAYING;
-        ppmStateChangeTime = millis();
-      }
-      break;
-    case PPM_DELAYING:
-      if (millis() - ppmStateChangeTime >= delayDuration) {
-        Serial.println("Delay finished. Starting PPM B pump...");
-        ppmState = PPM_DOSING_B;
-        ppmStateChangeTime = millis();
-        digitalWrite(PPM_B_PUMP_PIN, HIGH);
-      }
-      break;
-    case PPM_DOSING_B:
-      if (millis() - ppmStateChangeTime >= dosingDuration) {
-        Serial.println("PPM B pump finished. Returning to idle.");
-        digitalWrite(PPM_B_PUMP_PIN, LOW);
-        ppmState = PPM_IDLE;
-      }
-      break;
-  }
   
-  switch (phState) {
-    case PH_IDLE:
-      break;
-    case PH_DOSING_UP:
-      if (millis() - phStateChangeTime >= dosingDuration) {
-        Serial.println("pH Up pump finished. Returning to idle.");
-        digitalWrite(PH_UP_PUMP_PIN, LOW);
-        phState = PH_IDLE;
-      }
-      break;
-    case PH_DOSING_DOWN:
-      if (millis() - phStateChangeTime >= dosingDuration) {
-        Serial.println("pH Down pump finished. Returning to idle.");
-        digitalWrite(PH_DOWN_PUMP_PIN, LOW);
-        phState = PH_IDLE;
-      }
-      break;
-  }
-  // -------------------------------------------------
-
   if (WiFi.status() == WL_CONNECTED) {
+    
+    // --- Dosing state machine logic (ONLY runs when connected) ---
+    switch (ppmState) {
+      case PPM_IDLE:
+        break;
+      case PPM_DOSING_A:
+        if (millis() - ppmStateChangeTime >= dosingDuration) {
+          Serial.println("PPM A pump finished. Starting delay...");
+          digitalWrite(PPM_A_PUMP_PIN, LOW);
+          ppmState = PPM_DELAYING;
+          ppmStateChangeTime = millis();
+        }
+        break;
+      case PPM_DELAYING:
+        if (millis() - ppmStateChangeTime >= delayDuration) {
+          Serial.println("Delay finished. Starting PPM B pump...");
+          ppmState = PPM_DOSING_B;
+          ppmStateChangeTime = millis();
+          digitalWrite(PPM_B_PUMP_PIN, HIGH);
+        }
+        break;
+      case PPM_DOSING_B:
+        if (millis() - ppmStateChangeTime >= dosingDuration) {
+          Serial.println("PPM B pump finished. Returning to idle.");
+          digitalWrite(PPM_B_PUMP_PIN, LOW);
+          ppmState = PPM_IDLE;
+        }
+        break;
+    }
+    
+    switch (phState) {
+      case PH_IDLE:
+        break;
+      case PH_DOSING_UP:
+        if (millis() - phStateChangeTime >= dosingDuration) {
+          Serial.println("pH Up pump finished. Returning to idle.");
+          digitalWrite(PH_UP_PUMP_PIN, LOW);
+          phState = PH_IDLE;
+        }
+        break;
+      case PH_DOSING_DOWN:
+        if (millis() - phStateChangeTime >= dosingDuration) {
+          Serial.println("pH Down pump finished. Returning to idle.");
+          digitalWrite(PH_DOWN_PUMP_PIN, LOW);
+          phState = PH_IDLE;
+        }
+        break;
+    }
+    // -------------------------------------------------
+
+    // --- Original sensor reading and POST logic ---
     sensorData.clear();
     readDHT();
     readUltrasonic();
@@ -357,6 +360,7 @@ void loop() {
         }
         
         // --- Pump Control Logic ---
+        // This is where pumps are started based on server command
         if (ph_up_pump_cmd && phState == PH_IDLE) {
           phState = PH_DOSING_UP;
           phStateChangeTime = millis();
@@ -389,7 +393,18 @@ void loop() {
     }
     http.end();
   } else {
-    Serial.println("WiFi Disconnected");
+    // --- Failsafe: WiFi Disconnected ---
+    Serial.println("WiFi Disconnected! Activating Failsafe: Stopping all pumps.");
+    
+    // **Immediate Pump Shutdown Failsafe**
+    stopAllPumps();
+
+    // **Reset Dosing States to prevent immediate restart if WiFi reconnects quickly**
+    // This is crucial to prevent the state machine from assuming a pump is still running.
+    ppmState = PPM_IDLE;
+    phState = PH_IDLE;
+
+
   }
 
   delay(5000); 
