@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import clientPromise from "../../../lib/mongodb";
-import { auth } from "../../auth/[...nextauth]/route";
+import { auth } from "../auth/[...nextauth]/route";
 
 // GET handler: Fetches a list of all archived projects for the user.
 export async function GET() {
