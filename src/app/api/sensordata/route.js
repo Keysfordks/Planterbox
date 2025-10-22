@@ -176,50 +176,75 @@ export async function POST(request) {
         }
 
         if (data.action === "abort_plant") {
-    // --- 1. FETCH ALL DATA NEEDED FOR ARCHIVE ---
+    
+    // Fetch the active plant state
     const appState = await appStateCollection.findOne({
         state_name: "plantSelection",
         userId: userId,
     });
-    const latestData = await sensorCollection
-        .find({ userId: userId })
-        .sort({ timestamp: -1 })
-        .limit(1)
-        .next();
-        
-    const plantProfile = await plantProfileCollection.findOne({ 
-        plant_name: appState?.value?.plant, 
-        stage: appState?.value?.stage,
-        userId: userId
-    });
 
     const startDate = appState?.value?.timestamp;
-    const endDate = new Date().toISOString();
+    let archiveCreated = false;
 
-    // --- 2. CREATE ARCHIVE RECORD ---
+    // --- 1. ATTEMPT TO CREATE ARCHIVE RECORD (IF STATE EXISTS) ---
     if (startDate) {
-        const archivedProject = {
-            userId: userId,
-            plantName: appState.value.plant,
-            startDate: startDate,
-            endDate: endDate,
-            finalStage: appState.value.stage,
-            idealConditions: plantProfile?.ideal_conditions || {},
-            finalSensorData: latestData,
-            // Store the start date as a key for querying the sensor_data later
-            sensorDataQueryKey: startDate, 
-        };
-        const archiveCollection = db.collection("archived_projects");
-        await archiveCollection.insertOne(archivedProject);
-    }
+        try {
+            // Safely extract plant/stage names
+            const plantName = appState.value?.plant || 'Unknown Plant';
+            const stageName = appState.value?.stage || 'Unknown Stage';
+            const endDate = new Date().toISOString();
+            
+            // Fetch data (can be null, but we safely handle it)
+            // This is the fetch that fails if no sensor data exists
+            const latestData = await sensorCollection 
+                .find({ userId: userId })
+                .sort({ timestamp: -1 })
+                .limit(1)
+                .next();
+                
+            const plantProfile = await plantProfileCollection.findOne({ 
+                plant_name: plantName, 
+                stage: stageName,
+                userId: userId
+            });
 
-    // --- 3. DELETE ACTIVE STATE ---
+            // Construct the archive object
+            const archivedProject = {
+                userId: userId,
+                plantName: plantName,
+                startDate: startDate,
+                endDate: endDate,
+                finalStage: stageName,
+                idealConditions: plantProfile?.ideal_conditions || {},
+                // CRITICAL: latestData will be null if no sensor data exists, which is fine
+                finalSensorData: latestData || null, 
+                sensorDataQueryKey: startDate, 
+            };
+            
+            const archiveCollection = db.collection("archived_projects");
+            await archiveCollection.insertOne(archivedProject);
+            
+            archiveCreated = true;
+
+        } catch(archiveError) {
+            // IMPORTANT: Log the error but DO NOT re-throw it. 
+            // The priority is cleaning up the active state.
+            console.error("Warning: Failed to create archive record. Proceeding with plant state deletion.", archiveError);
+        }
+    } 
+
+    // --- 2. DELETE ACTIVE STATE (MUST succeed to abort the plant) ---
     await appStateCollection.deleteOne({
         state_name: "plantSelection",
         userId: userId,
     });
     
-    return NextResponse.json({ message: "Plant aborted and archived successfully" });
+    // Send a message based on whether the archive creation succeeded
+    const message = archiveCreated 
+        ? "Plant aborted and successfully archived." 
+        : "Plant aborted successfully. Note: No archive record created (no start state or sensor data found).";
+
+    return NextResponse.json({ message: message });
 }
 
         const sensorDataWithTimestamp = {
