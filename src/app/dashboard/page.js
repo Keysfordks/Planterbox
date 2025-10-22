@@ -3,10 +3,13 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Card, Avatar, Spin, message, Select, Button, Alert, Tooltip, Modal, Space, Typography, Divider, Input, Form, InputNumber, Row, Col} from "antd";
+import { Card, Avatar, Spin, message, Select, Button, Alert, Tooltip, Modal, Typography, Divider, Input, Form, InputNumber, Row, Col} from "antd";
 import Navbar from "../../components/navbar";
 import styles from "../../styles/dashboard.module.css";
-import { FaInfoCircle, FaExclamationTriangle, FaSync, FaChartLine, FaLeaf, FaSeedling,} from "react-icons/fa";
+import { FaInfoCircle, FaExclamationTriangle, FaLeaf } from "react-icons/fa";
+
+// Import the new HistoricalCharts component
+import HistoricalCharts from "../../components/HistoricalCharts"; 
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -22,49 +25,7 @@ const GROWTH_STAGES = ["seedling", "vegetative", "mature"];
 
 const { Option } = Select;
 
-// Growth Graph Component
-const GrowthGraph = ({ data }) => {
-  if (!data || data.length === 0) {
-    return (
-      <div className={styles.graphEmpty}>
-        No historical data available yet. Keep monitoring!
-      </div>
-    );
-  }
-
-  const firstTimestamp = new Date(data[0].timestamp);
-  const lastTimestamp = new Date(data[data.length - 1].timestamp);
-  const daysOfData = Math.ceil(
-    (lastTimestamp - firstTimestamp) / (1000 * 60 * 60 * 24)
-  );
-
-  return (
-    <div className={styles.graphContainer}>
-      <h3 className={styles.graphTitle}>
-        Growth Trend ({daysOfData} Days)
-      </h3>
-      <div className={styles.graphPlaceholder}>
-        <p className={styles.graphPlaceholderTitle}>
-          [Placeholder for Chart Library]
-        </p>
-        <ul className={styles.graphPlaceholderList}>
-          <li>
-            This chart would display a multi-series line graph for pH, PPM, and
-            Temp.
-          </li>
-          <li>Data points: {data.length} records fetched.</li>
-          <li>
-            Time Range: {firstTimestamp.toLocaleDateString()} to{" "}
-            {lastTimestamp.toLocaleDateString()}
-          </li>
-        </ul>
-      </div>
-      <p className={styles.graphFooter}>
-        A charting library is required here to visualize the data.
-      </p>
-    </div>
-  );
-};
+// The GrowthGraph component is removed, and its logic is moved to HistoricalCharts.js
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -77,9 +38,14 @@ export default function DashboardPage() {
   const [idealConditions, setIdealConditions] = useState({});
   const [sensorStatus, setSensorStatus] = useState({});
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [showGraphModal, setShowGraphModal] = useState(false);
-  const [historicalData, setHistoricalData] = useState(null);
-  const [graphLoading, setGraphLoading] = useState(false);
+  
+  // State to control the visibility of the new chart modal
+  const [showGraphModal, setShowGraphModal] = useState(false); 
+
+  // Removed historicalData and graphLoading states as they are now managed in HistoricalCharts.js
+  // const [historicalData, setHistoricalData] = useState(null);
+  // const [graphLoading, setGraphLoading] = useState(false); 
+  
   const [showPlantModal, setShowPlantModal] = useState(false);
   const [availablePresets, setAvailablePresets] = useState([]);
   const [selectedPreset, setSelectedPreset] = useState(null);
@@ -143,6 +109,7 @@ export default function DashboardPage() {
 
     const fetchIdealConditions = async () => {
       try {
+        // Updated endpoint to use correct query parameters
         const response = await fetch(
           `/api/sensordata?plant=${selectedPlant}&stage=${selectedStage}`
         );
@@ -192,7 +159,8 @@ export default function DashboardPage() {
 
         const presetResponse = await fetch(`/api/plants?presets=true&plant=${selectedPreset.plant_name}&stage=${dropdownStage}`);
         const presetData = await presetResponse.json();
-        idealConditionsToUse = presetData.ideal_conditions || selectedPreset.ideal_conditions;
+        // Assuming presetData.ideal_conditions is the structure you need
+        idealConditionsToUse = presetData.ideal_conditions || selectedPreset.ideal_conditions; 
       }
 
       const response = await fetch("/api/plants", {
@@ -222,7 +190,7 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error("Error creating plant:", error);
-      message.error("Please fill in all required fields");
+      message.error("Please fill in all required fields or check custom values");
     }
   };
 
@@ -289,33 +257,27 @@ export default function DashboardPage() {
     }
   };
 
-  const fetchHistoricalData = async () => {
-    setGraphLoading(true);
-    try {
-      const response = await fetch("/api/sensordata?growth=true");
-      const data = await response.json();
-      setHistoricalData(data.historicalData);
-      setShowGraphModal(true);
-    } catch (error) {
-      console.error("Failed to fetch historical data:", error);
-      message.error("Failed to load growth data");
-    } finally {
-      setGraphLoading(false);
-    }
+  // Replaced fetchHistoricalData logic with just setting the modal state
+  const openHistoricalGraph = () => {
+    setShowGraphModal(true);
   };
 
-  const GrowthModal = () => (
-    <div className={styles.graphModal}>
-      <div className={styles.graphModalContent}>
-        <button
-          onClick={() => setShowGraphModal(false)}
-          className={styles.graphModalClose}
-        >
-          &times;
-        </button>
-        <GrowthGraph data={historicalData} />
-      </div>
-    </div>
+  // REPLACED GrowthModal with an Antd Modal housing the new component
+  const ChartModal = () => (
+    <Modal
+      open={showGraphModal}
+      onCancel={() => setShowGraphModal(false)}
+      footer={null}
+      width="90%"
+      centered
+      closable={true}
+      maskClosable={true}
+      style={{ top: 20 }} // Pushes the modal down slightly
+      bodyStyle={{ padding: 0 }}
+    >
+      {/* Use the new component and pass the visibility state */}
+      <HistoricalCharts show={showGraphModal} />
+    </Modal>
   );
 
   const PlantCreationModal = () => (
@@ -547,10 +509,6 @@ export default function DashboardPage() {
             >
               {GROWTH_STAGES.map((stage) => (
                 <Option key={stage} value={stage}>
-                  {stage === 'seedling'}
-                  {stage === 'vegetative' }
-                  {stage === 'mature' }
-                  {' '}
                   {stage.charAt(0).toUpperCase() + stage.slice(1)} Stage
                 </Option>
               ))}
@@ -782,16 +740,15 @@ export default function DashboardPage() {
               <div className={styles.utilityCard}>
                 <Button
                   type="primary"
-
-                  onClick={fetchHistoricalData}
-                  loading={graphLoading}
+                  // Call the function to show the modal (which triggers data fetching)
+                  onClick={openHistoricalGraph} 
                   style={{ 
                     backgroundColor: '#10b981',
                     borderColor: '#10b981',
                     fontWeight: 'bold'
                   }}
                 >
-                  {graphLoading ? "Loading Growth..." : "View Growth (7 Days)"}
+                  View Historical Growth
                 </Button>
               </div>
             </div>
@@ -827,8 +784,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Graph Modal */}
-        {showGraphModal && <GrowthModal />}
+        {/* Graph Modal - Now uses the Ant Design Modal component */}
+        <ChartModal />
         
         {/* Plant Creation Modal */}
         <PlantCreationModal />
