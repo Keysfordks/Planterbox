@@ -5,8 +5,8 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Card, Spin, List, Typography, Button, Alert, message, Modal } from 'antd';
 import { HistoryOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
-import Navbar from '../../../components/navbar'; 
-import styles from '../../../styles/dashboard.module.css';
+import Navbar from '../../components/navbar'; 
+import styles from '../../styles/dashboard.module.css';
 
 const { Title, Text } = Typography;
 const { confirm } = Modal;
