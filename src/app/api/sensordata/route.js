@@ -176,12 +176,51 @@ export async function POST(request) {
         }
 
         if (data.action === "abort_plant") {
-            await appStateCollection.deleteOne({
-                state_name: "plantSelection",
-                userId: userId,
-            });
-            return NextResponse.json({ message: "Plant aborted successfully" });
-        }
+    // --- 1. FETCH ALL DATA NEEDED FOR ARCHIVE ---
+    const appState = await appStateCollection.findOne({
+        state_name: "plantSelection",
+        userId: userId,
+    });
+    const latestData = await sensorCollection
+        .find({ userId: userId })
+        .sort({ timestamp: -1 })
+        .limit(1)
+        .next();
+        
+    const plantProfile = await plantProfileCollection.findOne({ 
+        plant_name: appState?.value?.plant, 
+        stage: appState?.value?.stage,
+        userId: userId
+    });
+
+    const startDate = appState?.value?.timestamp;
+    const endDate = new Date().toISOString();
+
+    // --- 2. CREATE ARCHIVE RECORD ---
+    if (startDate) {
+        const archivedProject = {
+            userId: userId,
+            plantName: appState.value.plant,
+            startDate: startDate,
+            endDate: endDate,
+            finalStage: appState.value.stage,
+            idealConditions: plantProfile?.ideal_conditions || {},
+            finalSensorData: latestData,
+            // Store the start date as a key for querying the sensor_data later
+            sensorDataQueryKey: startDate, 
+        };
+        const archiveCollection = db.collection("archived_projects");
+        await archiveCollection.insertOne(archivedProject);
+    }
+
+    // --- 3. DELETE ACTIVE STATE ---
+    await appStateCollection.deleteOne({
+        state_name: "plantSelection",
+        userId: userId,
+    });
+    
+    return NextResponse.json({ message: "Plant aborted and archived successfully" });
+}
 
         const sensorDataWithTimestamp = {
             ...data,
