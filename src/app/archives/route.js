@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
-import clientPromise from "../../../lib/mongodb";
-import { auth } from "../auth/[...nextauth]/route";
+
+// FIX 1: Access lib/mongodb. This path works for files inside src/app/api/
+import clientPromise from "../../../lib/mongodb"; 
+
+// FIX 2: Access auth, which is a sibling of the archives folder inside /api
+import { auth } from "../auth/[...nextauth]/route"; 
+import { ObjectId } from 'mongodb';
 
 // GET handler: Fetches a list of all archived projects for the user.
 export async function GET() {

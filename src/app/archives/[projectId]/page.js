@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Card, Spin, Typography, Alert, Divider } from 'antd';
-import Navbar from '../components/navbar'; 
-import HistoricalCharts from '../components/HistoricalCharts'; 
-import styles from '../styles/dashboard.module.css';
+import Navbar from '../../../components/navbar'; 
+import HistoricalCharts from '../../../components/HistoricalCharts'; 
+import styles from '../../../styles/dashboard.module.css';
 
 const { Title, Text, Paragraph } = Typography;
 
