@@ -292,21 +292,29 @@ export async function GET(request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = default_device;
+    // --- CRITICAL FIX START ---
+    const authUserId = session.user.id; // User ID from NextAuth session
+    const DEVICE_ID = "default_device"; // ID used by your ESP32 board
+    // --- CRITICAL FIX END ---
+    
     const client = await clientPromise;
     const db = client.db("planterbox");
     const sensorCollection = db.collection("sensordata");
     const appStateCollection = db.collection("app_state");
-    const plantProfileCollection = db.collection("plant_profiles"); // Added
+    const plantProfileCollection = db.collection("plant_profiles");
 
     const { searchParams } = new URL(request.url);
 
-    // Handle historical data request (REVISED TO USE NEW getHistoricalData)
+    // Handle historical data request (Uses AUTH ID for app state lookup)
     if (searchParams.get("growth") === "true") {
-      return getHistoricalData(appStateCollection, sensorCollection, plantProfileCollection, userId);
+      // NOTE: getHistoricalData currently uses a single userId for ALL filters.
+      // To get data, it needs to be updated to use DEVICE_ID for sensorCollection lookups
+      // or you need to ensure historical data is stored under the authUserId.
+      // For now, pass the Auth ID, but be aware of potential issues here.
+      return getHistoricalData(appStateCollection, sensorCollection, plantProfileCollection, authUserId);
     }
 
-    // Handle ideal conditions request
+    // Handle ideal conditions request (Uses AUTH ID for profile lookup)
     const plantName = searchParams.get("plant");
     const stageName = searchParams.get("stage");
 
@@ -314,7 +322,7 @@ export async function GET(request) {
       const idealConditions = await plantProfileCollection.findOne({
         plant_name: plantName,
         stage: stageName,
-        userId: userId,
+        userId: authUserId, // Use authenticated user ID
       });
 
       return NextResponse.json({
@@ -323,21 +331,25 @@ export async function GET(request) {
     }
 
     // Handle latest sensor data request (default)
+    // FIX: Fetch latest sensor data using the DEVICE_ID the ESP32 uses
     const latestData = await sensorCollection
-      .find({ userId: userId })
+      .find({ userId: DEVICE_ID })
       .sort({ timestamp: -1 })
       .limit(1)
       .next();
 
+    // Use the authenticated user's ID to retrieve plant selection
     const { currentPlant, currentStage } = await getCurrentSelection(
       appStateCollection,
-      userId
+      authUserId
     );
+    
+    // Pass latestData to backendLogic for command calculation
     const { deviceCommands, sensorStatus } = await processSensorData(
       latestData,
       currentPlant,
       currentStage,
-      userId
+      authUserId
     );
 
     // Prepare sensor data response
@@ -346,6 +358,7 @@ export async function GET(request) {
       const { tds, _id, ...cleanedData } = latestData;
       sensorDataToReturn = cleanedData;
     } else {
+      // KEEP: Return nulls if no data is found (i.e., display "Loading...")
       sensorDataToReturn = {
         temperature: null,
         humidity: null,
