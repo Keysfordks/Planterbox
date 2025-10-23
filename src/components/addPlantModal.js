@@ -43,20 +43,24 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
           ph_max: toNum(values.ph_max),
           ppm_min: toNum(values.ppm_min),
           ppm_max: toNum(values.ppm_max),
-          // HOURS/DAY — your backend treats this as hours per day
+          // HOURS/DAY — backend interprets this as hours/day
           light_pwm_cycle: toNum(values.light_pwm_cycle),
         },
       };
 
-      // Final NaN/empty guard
-      if (!payload.plant_name || !payload.stage) {
-        throw new Error('Plant name and stage are required.');
-      }
+      // Final NaN/empty guard with specific field names
+      if (!payload.plant_name) throw new Error('Plant name is required.');
+      if (!payload.stage) throw new Error('Stage is required.');
       for (const [k, v] of Object.entries(payload.ideal_conditions)) {
         if (typeof v !== 'number' || Number.isNaN(v)) {
           throw new Error(`Field "${k}" must be a valid number.`);
         }
       }
+
+      // DEBUG: log exactly what we're sending (helps diagnose)
+      // Remove if you prefer, but it won't break anything.
+      // eslint-disable-next-line no-console
+      console.log('Submitting custom profile payload:', payload);
 
       const res = await fetch('/api/plants', {
         method: 'POST',
@@ -64,10 +68,10 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
         body: JSON.stringify(payload),
       });
 
+      // Show raw server error text in the banner
       if (!res.ok) {
         const text = await res.text();
-        // Show the server message if it exists (401, 400, etc.)
-        throw new Error(`Create failed (${res.status}): ${text.slice(0, 200)}`);
+        throw new Error(text || `Create failed (${res.status})`);
       }
 
       const data = await res.json();
@@ -85,9 +89,7 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
 
   const onFinishFailed = ({ errorFields }) => {
     setSubmitErr('Please correct the highlighted fields.');
-    if (errorFields?.length) {
-      form.scrollToField(errorFields[0].name);
-    }
+    if (errorFields?.length) form.scrollToField(errorFields[0].name);
   };
 
   return (
@@ -180,7 +182,7 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
           </Form.Item>
         </div>
 
-        {/* pH (decimals matter) */}
+        {/* pH (precise) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Form.Item
             label="pH Min"
