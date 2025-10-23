@@ -292,7 +292,7 @@ export async function GET(request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = session.user.id;
+    const userId = default_device;
     const client = await clientPromise;
     const db = client.db("planterbox");
     const sensorCollection = db.collection("sensordata");
