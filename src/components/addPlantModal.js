@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Modal, Form, Input, InputNumber, Select, Button, message, Alert } from 'antd';
+import { useRouter } from 'next/navigation';
 
 const STAGES = ['seedling', 'vegetative', 'flowering', 'fruiting'];
 
@@ -9,6 +10,7 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState(null);
+  const router = useRouter();
 
   // Cross-field range validator (min ≤ max)
   const rangeRule = (minField, maxField, label) => ({
@@ -24,12 +26,19 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
     },
   });
 
-  const onFinish = async (values) => {
+  const hardClose = () => {
+    // fully reset local state so no banner lingers
     setSubmitErr(null);
+    form.resetFields();
+    // Close if parent provided a handler
+    onClose?.();
+  };
+
+  const onFinish = async (values) => {
+    setSubmitErr(null); // clear any old banner
     try {
       setSubmitting(true);
 
-      // Build payload with explicit coercion
       const toNum = (v) => (typeof v === 'number' ? v : Number(v));
       const payload = {
         plant_name: String(values.plant_name || '').trim(),
@@ -43,7 +52,7 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
           ph_max: toNum(values.ph_max),
           ppm_min: toNum(values.ppm_min),
           ppm_max: toNum(values.ppm_max),
-          // HOURS/DAY — backend interprets this as hours/day
+          // HOURS/DAY — backend interprets this as hours per day
           light_pwm_cycle: toNum(values.light_pwm_cycle),
         },
       };
@@ -57,28 +66,32 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
         }
       }
 
-      // DEBUG: log exactly what we're sending (helps diagnose)
-      // Remove if you prefer, but it won't break anything.
-      // eslint-disable-next-line no-console
-      console.log('Submitting custom profile payload:', payload);
-
       const res = await fetch('/api/plants', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      // Show raw server error text in the banner
+      // Show server text (401/400) directly if not OK
       if (!res.ok) {
         const text = await res.text();
         throw new Error(text || `Create failed (${res.status})`);
       }
 
-      const data = await res.json();
+      // Success
+      await res.json(); // not used, but await for consistency
+      message.destroy(); // clear any prior antd messages
       message.success('Plant profile created.');
-      onSuccess?.(data);
-      form.resetFields();
-      onClose?.();
+
+      // tell parent (optional)
+      onSuccess?.({ ok: true });
+
+      // Close the modal locally so banner can't linger
+      hardClose();
+
+      // Navigate to dashboard no matter what (ensures UX continues)
+      router.push('/dashboard');
+
     } catch (err) {
       console.error('AddPlantModal create error:', err);
       setSubmitErr(err.message || 'Please fill in all required fields or check custom values.');
@@ -96,11 +109,7 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
     <Modal
       title="Create Custom Plant Profile"
       open={open}
-      onCancel={() => {
-        setSubmitErr(null);
-        form.resetFields();
-        onClose?.();
-      }}
+      onCancel={hardClose}
       footer={null}
       destroyOnClose
     >
@@ -252,19 +261,8 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
 
         <Form.Item style={{ marginTop: 8 }}>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <Button
-              onClick={() => {
-                setSubmitErr(null);
-                form.resetFields();
-                onClose?.();
-              }}
-              disabled={submitting}
-            >
-              Cancel
-            </Button>
-            <Button type="primary" htmlType="submit" loading={submitting}>
-              Create Plant
-            </Button>
+            <Button onClick={hardClose} disabled={submitting}>Cancel</Button>
+            <Button type="primary" htmlType="submit" loading={submitting}>Create Plant</Button>
           </div>
         </Form.Item>
       </Form>
