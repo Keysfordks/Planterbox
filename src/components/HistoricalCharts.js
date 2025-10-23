@@ -1,9 +1,34 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  LineElement,
+  PointElement,
+  LinearScale,
+  TimeScale,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+  CategoryScale
+} from 'chart.js';
+import 'chartjs-adapter-date-fns';
+import annotationPlugin from 'chartjs-plugin-annotation';
 
-// If you already use react-chartjs-2 & Chart.js, keep your imports.
-// This version renders a simple fallback if no data; you can wire charts back in where indicated.
+ChartJS.register(
+  LineElement,
+  PointElement,
+  LinearScale,
+  TimeScale,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+  CategoryScale,
+  annotationPlugin
+);
 
 export default function HistoricalCharts({ show }) {
   const [loading, setLoading] = useState(false);
@@ -20,7 +45,6 @@ export default function HistoricalCharts({ show }) {
         throw new Error(`Growth fetch failed (${res.status}): ${text.slice(0, 180)}`);
       }
       const json = await res.json();
-      // Ensure structure is present to avoid null access
       setPayload({
         historicalData: Array.isArray(json?.historicalData) ? json.historicalData : [],
         idealConditions: json?.idealConditions ?? null,
@@ -43,29 +67,24 @@ export default function HistoricalCharts({ show }) {
     if (show) loadGrowth();
   }, [show]);
 
-  // Safely normalize the ideals for UI (may be null)
-  const ideals = useMemo(() => {
-    const ic = payload?.idealConditions;
-    if (!ic) return null;
-    return {
-      temperature: { min: ic?.temp_min ?? null,     max: ic?.temp_max ?? null },
-      humidity:    { min: ic?.humidity_min ?? null, max: ic?.humidity_max ?? null },
-      ph:          { min: ic?.ph_min ?? null,       max: ic?.ph_max ?? null },
-      ppm:         { min: ic?.ppm_min ?? null,      max: ic?.ppm_max ?? null },
-    };
-  }, [payload]);
-
   const rows = payload?.historicalData ?? [];
+  const ideals = payload?.idealConditions ?? null;
   const hasData = rows.length > 0;
 
+  const timeUnit = useMemo(() => {
+    if (!hasData) return 'hour';
+    const first = new Date(rows[0].timestamp).getTime();
+    const last = new Date(rows[rows.length - 1].timestamp).getTime();
+    const spanHours = Math.max(1, (last - first) / 36e5);
+    if (spanHours <= 24) return 'hour';
+    if (spanHours <= 24 * 14) return 'day';
+    return 'week';
+  }, [rows, hasData]);
+
   return (
-    <div style={{ padding: 16, minHeight: 200 }}>
+    <div style={{ padding: 16 }}>
       {loading && <div>Loading historical data…</div>}
-      {!loading && error && (
-        <div style={{ color: 'crimson', marginBottom: 12 }}>
-          {error}
-        </div>
-      )}
+      {!loading && error && <div style={{ color: 'crimson', marginBottom: 12 }}>{error}</div>}
 
       {!loading && !hasData && (
         <div style={{ lineHeight: 1.6 }}>
@@ -75,100 +94,132 @@ export default function HistoricalCharts({ show }) {
             {payload?.selectionStartTime ? new Date(payload.selectionStartTime).toLocaleString() : 'N/A'}
             ).
           </div>
-          {/* Optional: show current ideals if available */}
-          {ideals ? (
-            <div style={{ marginTop: 12, opacity: 0.85 }}>
-              <div><b>Ideal Ranges</b></div>
-              <div>Temp: {ideals.temperature.min ?? '—'} – {ideals.temperature.max ?? '—'} °C</div>
-              <div>Humidity: {ideals.humidity.min ?? '—'} – {ideals.humidity.max ?? '—'} %</div>
-              <div>pH: {ideals.ph.min ?? '—'} – {ideals.ph.max ?? '—'}</div>
-              <div>PPM: {ideals.ppm.min ?? '—'} – {ideals.ppm.max ?? '—'}</div>
-            </div>
-          ) : (
-            <div style={{ marginTop: 12, opacity: 0.7 }}>
-              Ideal ranges unavailable.
-            </div>
-          )}
         </div>
       )}
 
       {!loading && hasData && (
-        <div>
-          {/* ====== PLACE YOUR CHARTS HERE ======
-              This guard ensures we only render charts when data exists.
-              Use rows[] for datasets; use "ideals" for shaded bands or annotations.
-              Example:
-              - x: new Date(row.timestamp)
-              - y: row.temperature / humidity / ph / ppm
-          */}
-          <div style={{ marginBottom: 8 }}>
-            <b>Data points:</b> {rows.length}
-          </div>
-
-          <div style={{ display: 'grid', gap: 16 }}>
-            {/* Temperature preview table (simple, safe) */}
-            <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 12 }}>
-              <div style={{ fontWeight: 600, marginBottom: 8 }}>
-                Temperature (°C) 
-                <span style={{ fontWeight: 400, marginLeft: 8, opacity: 0.8 }}>
-                  Ideal: {ideals?.temperature?.min ?? '—'}–{ideals?.temperature?.max ?? '—'}
-                </span>
-              </div>
-              <MiniTable rows={rows} field="temperature" />
-            </div>
-
-            {/* Humidity */}
-            <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 12 }}>
-              <div style={{ fontWeight: 600, marginBottom: 8 }}>
-                Humidity (%) 
-                <span style={{ fontWeight: 400, marginLeft: 8, opacity: 0.8 }}>
-                  Ideal: {ideals?.humidity?.min ?? '—'}–{ideals?.humidity?.max ?? '—'}
-                </span>
-              </div>
-              <MiniTable rows={rows} field="humidity" />
-            </div>
-
-            {/* PPM */}
-            <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 12 }}>
-              <div style={{ fontWeight: 600, marginBottom: 8 }}>
-                PPM (Nutrients) 
-                <span style={{ fontWeight: 400, marginLeft: 8, opacity: 0.8 }}>
-                  Ideal: {ideals?.ppm?.min ?? '—'}–{ideals?.ppm?.max ?? '—'}
-                </span>
-              </div>
-              <MiniTable rows={rows} field="ppm" />
-            </div>
-
-            {/* pH */}
-            <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 12 }}>
-              <div style={{ fontWeight: 600, marginBottom: 8 }}>
-                pH Level 
-                <span style={{ fontWeight: 400, marginLeft: 8, opacity: 0.8 }}>
-                  Ideal: {ideals?.ph?.min ?? '—'}–{ideals?.ph?.max ?? '—'}
-                </span>
-              </div>
-              <MiniTable rows={rows} field="ph" />
-            </div>
-          </div>
+        <div style={{ display: 'grid', gap: 24 }}>
+          <MetricChart
+            title="Temperature (°C)"
+            unit="°C"
+            field="temperature"
+            rows={rows}
+            idealMin={ideals?.temp_min ?? null}
+            idealMax={ideals?.temp_max ?? null}
+            timeUnit={timeUnit}
+          />
+          <MetricChart
+            title="Humidity (%)"
+            unit="%"
+            field="humidity"
+            rows={rows}
+            idealMin={ideals?.humidity_min ?? null}
+            idealMax={ideals?.humidity_max ?? null}
+            timeUnit={timeUnit}
+          />
+          <MetricChart
+            title="PPM (Nutrients)"
+            unit=""
+            field="ppm"
+            rows={rows}
+            idealMin={ideals?.ppm_min ?? null}
+            idealMax={ideals?.ppm_max ?? null}
+            timeUnit={timeUnit}
+          />
+          <MetricChart
+            title="pH Level"
+            unit=""
+            field="ph"
+            rows={rows}
+            idealMin={ideals?.ph_min ?? null}
+            idealMax={ideals?.ph_max ?? null}
+            timeUnit={timeUnit}
+          />
         </div>
       )}
     </div>
   );
 }
 
-// Tiny safe preview table; you can replace with actual charts.
-function MiniTable({ rows, field }) {
-  if (!rows?.length) return <div style={{ opacity: 0.7 }}>No data</div>;
+/** One chart with an ideal-range green band */
+function MetricChart({ title, unit, field, rows, idealMin, idealMax, timeUnit }) {
+  // Build (x,y) points; skip nulls
+  const points = rows
+    .map(r => {
+      const y = r?.[field];
+      if (y == null || Number.isNaN(y)) return null;
+      return { x: new Date(r.timestamp), y: Number(y) };
+    })
+    .filter(Boolean);
+
+  const data = {
+    datasets: [
+      {
+        label: title,
+        data: points,
+        parsing: false,
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.25,
+        fill: false,
+      }
+    ]
+  };
+
+  const annotations = {};
+  if (idealMin != null && idealMax != null && idealMin <= idealMax) {
+    annotations.idealBand = {
+      type: 'box',
+      yMin: idealMin,
+      yMax: idealMax,
+      backgroundColor: 'rgba(16, 185, 129, 0.18)', // translucent green
+      borderWidth: 0,
+    };
+  }
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      title: { display: true, text: `${title}${unit ? `  (Ideal: ${idealMin ?? '—'}–${idealMax ?? '—'} ${unit})` : ''}` },
+      tooltip: {
+        callbacks: {
+          label: ctx => {
+            const v = ctx.parsed.y;
+            const u = unit ? ` ${unit}` : '';
+            return `${v}${u} @ ${new Date(ctx.parsed.x).toLocaleString()}`;
+          }
+        }
+      },
+      annotation: { annotations }
+    },
+    scales: {
+      x: {
+        type: 'time',
+        time: { unit: timeUnit },
+        grid: { display: false },
+        ticks: { maxRotation: 0 },
+      },
+      y: {
+        beginAtZero: false,
+        grid: { color: 'rgba(0,0,0,0.08)' },
+        ticks: { callback: v => `${v}${unit ? ` ${unit}` : ''}` },
+      }
+    },
+    elements: {
+      line: { borderJoinStyle: 'round' }
+    }
+  };
+
+  // Give each chart its own height
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', rowGap: 6 }}>
-      {rows.slice(-10).map((r, idx) => (
-        <React.Fragment key={idx}>
-          <div style={{ opacity: 0.8 }}>{new Date(r.timestamp).toLocaleString()}</div>
-          <div style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-            {r?.[field] ?? '—'}
-          </div>
-        </React.Fragment>
-      ))}
+    <div style={{ height: 260, border: '1px solid #e5e7eb', borderRadius: 10, padding: 12 }}>
+      {points.length ? (
+        <Line data={data} options={options} />
+      ) : (
+        <div style={{ padding: 8, opacity: 0.7 }}>No {title} data yet.</div>
+      )}
     </div>
   );
 }
