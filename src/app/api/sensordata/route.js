@@ -355,7 +355,7 @@ export async function GET(request) {
     // Prepare sensor data response
     let sensorDataToReturn;
     if (latestData) {
-      const { tds, _id, ...cleanedData } = latestData;
+      const { tds, _id, userId, ...cleanedData } = latestData;
       sensorDataToReturn = cleanedData;
     } else {
       // KEEP: Return nulls if no data is found (i.e., display "Loading...")
