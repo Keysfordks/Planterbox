@@ -18,34 +18,34 @@ export async function GET(request) {
     const projectId = searchParams.get("projectId");
     const detail = searchParams.get("detail") === "true";
 
-   if (projectId) {
-  const _id = (() => {
-    try {
-      return new ObjectId(projectId);
-    } catch {
-      return null;
+      if (projectId) {
+      const _id = (() => {
+        try {
+          return new ObjectId(projectId);
+        } catch {
+          return null;
+        }
+      })();
+
+      const project = _id ? await archives.findOne({ _id, userId }) : null;
+      if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+      if (!detail) return NextResponse.json({ project }, { status: 200 });
+
+      const profile = await profiles.findOne(
+        {
+          plant_name: project.plantName,
+          stage: project.finalStage,
+          $or: [{ userId }, { userId: { $exists: false } }]
+        },
+        { sort: { userId: -1 } }
+      );
+
+      return NextResponse.json(
+        { project, idealConditions: profile?.ideal_conditions ?? null },
+        { status: 200 }
+      );
     }
-  })();
-
-  const project = _id ? await archives.findOne({ _id, userId }) : null;
-  if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  if (!detail) return NextResponse.json({ project }, { status: 200 });
-
-  const profile = await profiles.findOne(
-    {
-      plant_name: project.plantName,
-      stage: project.finalStage,
-      $or: [{ userId }, { userId: { $exists: false } }]
-    },
-    { sort: { userId: -1 } }
-  );
-
-  return NextResponse.json(
-    { project, idealConditions: profile?.ideal_conditions ?? null },
-    { status: 200 }
-  );
-}
 
 
     // List all projects

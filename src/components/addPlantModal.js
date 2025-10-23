@@ -1,70 +1,64 @@
 'use client';
-
 import { useState } from 'react';
-import { Modal, Form, Input, InputNumber, Select, Button, message, Space } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { message } from 'antd';
 
-const { Option } = Select;
+export default function AddPlantModal(props) {
+  const [submitting, setSubmitting] = useState(false);
 
-export default function AddPlantModal({ visible, onClose, onSuccess }) {
-  const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
-
-  const stages = ['seedling', 'vegetative', 'flowering', 'mature', 'harvest'];
-
-  const handleSubmit = async () => {
+  async function handleCreatePlant(values) {
     try {
-      const values = await form.validateFields();
-      setLoading(true);
+      setSubmitting(true);
 
-      // Construct the plant profile object
-      const plantProfile = {
-        plant_name: values.plant_name.toLowerCase().trim(),
+      const payload = {
+        plant_name: (values.plant_name || '').trim(),
         stage: values.stage,
         ideal_conditions: {
-          ph_min: parseFloat(values.ph_min),
-          ph_max: parseFloat(values.ph_max),
-          ppm_min: parseInt(values.ppm_min),
-          ppm_max: parseInt(values.ppm_max),
-          temp_min: parseFloat(values.temp_min),
-          temp_max: parseFloat(values.temp_max),
-          humidity_min: parseInt(values.humidity_min),
-          humidity_max: parseInt(values.humidity_max),
-          light_pwm_cycle: parseInt(values.light_pwm_cycle),
-          ideal_light_distance_cm: parseInt(values.ideal_light_distance_cm),
-          light_distance_tolerance_cm: parseInt(values.light_distance_tolerance_cm)
-        }
+          temp_min: Number(values.temp_min),
+          temp_max: Number(values.temp_max),
+          humidity_min: Number(values.humidity_min),
+          humidity_max: Number(values.humidity_max),
+          ph_min: Number(values.ph_min),
+          ph_max: Number(values.ph_max),
+          ppm_min: Number(values.ppm_min),
+          ppm_max: Number(values.ppm_max),
+          // hours/day per your intent; keep the key name your app already uses
+          light_pwm_cycle: Number(values.light_pwm_cycle),
+        },
       };
 
-      // Send to API
-      const response = await fetch('/api/plants', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(plantProfile),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to add plant');
+      // Minimal validation to avoid NaN
+      for (const [k, v] of Object.entries(payload.ideal_conditions)) {
+        if (Number.isNaN(v)) {
+          throw new Error(`Field "${k}" must be a number`);
+        }
+      }
+      if (!payload.plant_name || !payload.stage) {
+        throw new Error('Plant name and stage are required');
       }
 
-      message.success('Plant profile added successfully!');
-      form.resetFields();
-      onSuccess();
-      onClose();
-    } catch (error) {
-      console.error('Error adding plant:', error);
-      message.error('Failed to add plant profile');
-    } finally {
-      setLoading(false);
-    }
-  };
+      const res = await fetch('/api/plants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-  const handleCancel = () => {
-    form.resetFields();
-    onClose();
-  };
+      // IMPORTANT: don’t call res.json() if res.ok is false (HTML error page will crash JSON.parse)
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Create failed (${res.status}): ${text.slice(0, 200)}`);
+      }
+
+      const data = await res.json();
+      message.success('Plant profile created');
+      props.onSuccess?.(data);
+      props.onClose?.();
+    } catch (err) {
+      console.error('AddPlantModal create error:', err);
+      message.error(err.message || 'Could not create plant. Are you signed in?');
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <Modal
