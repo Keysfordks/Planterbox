@@ -81,58 +81,55 @@ export async function GET(request) {
   }
 }
 
-// POST - Add a new plant profile for the authenticated user
 export async function POST(request) {
   try {
     const session = await auth();
-    
-    console.log('Session in POST:', session);
-    
-    if (!session || !session.user?.id) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const body = await request.json();
-    
-    // Validate required fields
-    if (!body.plant_name || !body.stage || !body.ideal_conditions) {
-      return NextResponse.json(
-        { error: 'Missing required fields: plant_name, stage, or ideal_conditions' },
-        { status: 400 }
-      );
+    const { plant_name, stage, ideal_conditions } = body || {};
+    if (!plant_name || !stage || !ideal_conditions) {
+      return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
+    }
+
+    // Coerce to numbers and validate
+    const ic = {
+      temp_min: Number(ideal_conditions.temp_min),
+      temp_max: Number(ideal_conditions.temp_max),
+      humidity_min: Number(ideal_conditions.humidity_min),
+      humidity_max: Number(ideal_conditions.humidity_max),
+      ph_min: Number(ideal_conditions.ph_min),
+      ph_max: Number(ideal_conditions.ph_max),
+      ppm_min: Number(ideal_conditions.ppm_min),
+      ppm_max: Number(ideal_conditions.ppm_max),
+      // HOURS PER DAY — not duty cycle
+      light_pwm_cycle: Number(ideal_conditions.light_pwm_cycle),
+    };
+    for (const [k,v] of Object.entries(ic)) {
+      if (Number.isNaN(v)) return NextResponse.json({ error: `Field ${k} must be a number` }, { status: 400 });
     }
 
     const client = await clientPromise;
     const db = client.db('planterbox');
-    
-    // Add userId and timestamps to the plant profile
-    const plantData = {
-      ...body,
-      userId: session.user.id,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-    
-    console.log('Creating plant for user:', session.user.id);
-    
-    const result = await db.collection('plant_profiles').insertOne(plantData);
+    const col = db.collection('plant_profiles');
 
-    return NextResponse.json(
-      { 
-        message: 'Plant added successfully', 
-        id: result.insertedId,
-        plant: plantData
-      },
-      { status: 201 }
-    );
-  } catch (error) {
-    console.error('Error adding plant:', error);
-    return NextResponse.json(
-      { error: 'Failed to add plant', details: error.message },
-      { status: 500 }
-    );
+    const doc = {
+      userId: session.user.id,
+      plant_name: plant_name.trim(),
+      stage: String(stage).trim(),                 // ← must match what you “select”
+      ideal_conditions: ic,
+      createdAt: new Date()
+    };
+    const { insertedId } = await col.insertOne(doc);
+    return NextResponse.json({ ok: true, id: insertedId.toString() }, { status: 200 });
+  } catch (err) {
+    console.error('POST /api/plants error:', err);
+    return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
+
 
 // DELETE - Remove a plant profile
 export async function DELETE(request) {
