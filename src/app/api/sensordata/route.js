@@ -120,7 +120,6 @@ async function getHistoricalData(appStateCollection, sensorCollection, plantProf
 
 // POST handler - for sensor data uploads and plant selection (KEEP AS IS)
 export async function POST(request) {
-  // ... (Keep the original POST logic here)
     try {
         const client = await clientPromise;
         const db = client.db("planterbox");
@@ -144,6 +143,8 @@ export async function POST(request) {
         } else {
             userId = data.deviceId || "default_device";
         }
+        
+        // --- EXISTING LOGIC FOR WEB APP ACTIONS (select/abort) REMAINS HERE ---
 
         if (data.action === "select_plant") {
             if (!data.selectedPlant || !data.selectedStage) {
@@ -176,89 +177,54 @@ export async function POST(request) {
         }
 
         if (data.action === "abort_plant") {
-    
-    // Fetch the active plant state
-    const appState = await appStateCollection.findOne({
-        state_name: "plantSelection",
-        userId: userId,
-    });
-
-    const startDate = appState?.value?.timestamp;
-    let archiveCreated = false;
-
-    // --- 1. ATTEMPT TO CREATE ARCHIVE RECORD (IF STATE EXISTS) ---
-    if (startDate) {
-        try {
-            // Safely extract plant/stage names
-            const plantName = appState.value?.plant || 'Unknown Plant';
-            const stageName = appState.value?.stage || 'Unknown Stage';
-            const endDate = new Date().toISOString();
+            // ... (keep all your existing abort_plant logic here) ...
             
-            // Fetch data (can be null, but we safely handle it)
-            // This is the fetch that fails if no sensor data exists
-            const latestData = await sensorCollection 
-                .find({ userId: userId })
-                .sort({ timestamp: -1 })
-                .limit(1)
-                .next();
-                
-            const plantProfile = await plantProfileCollection.findOne({ 
-                plant_name: plantName, 
-                stage: stageName,
-                userId: userId
-            });
-
-            // Construct the archive object
-            const archivedProject = {
-                userId: userId,
-                plantName: plantName,
-                startDate: startDate,
-                endDate: endDate,
-                finalStage: stageName,
-                idealConditions: plantProfile?.ideal_conditions || {},
-                // CRITICAL: latestData will be null if no sensor data exists, which is fine
-                finalSensorData: latestData || null, 
-                sensorDataQueryKey: startDate, 
-            };
+            // NOTE: Ensure your abort logic successfully deletes the plantSelection document
+            // from app_state, otherwise the NEW CHECK below will always pass.
             
-            const archiveCollection = db.collection("archived_projects");
-            await archiveCollection.insertOne(archivedProject);
+            // ... (rest of the abort_plant logic) ...
             
-            archiveCreated = true;
+            const message = archiveCreated 
+                ? "Plant aborted and successfully archived." 
+                : "Plant aborted successfully. Note: No archive record created (no start state or sensor data found).";
 
-        } catch(archiveError) {
-            // IMPORTANT: Log the error but DO NOT re-throw it. 
-            // The priority is cleaning up the active state.
-            console.error("Warning: Failed to create archive record. Proceeding with plant state deletion.", archiveError);
+            return NextResponse.json({ message: message });
         }
-    } 
 
-    // --- 2. DELETE ACTIVE STATE (MUST succeed to abort the plant) ---
-    await appStateCollection.deleteOne({
-        state_name: "plantSelection",
-        userId: userId,
-    });
-    
-    // Send a message based on whether the archive creation succeeded
-    const message = archiveCreated 
-        ? "Plant aborted and successfully archived." 
-        : "Plant aborted successfully. Note: No archive record created (no start state or sensor data found).";
 
-    return NextResponse.json({ message: message });
-}
+        // -----------------------------------------------------------------------------------
+        // --- CRITICAL FIX: CHECK FOR ACTIVE PLANT SELECTION BEFORE SAVING SENSOR DATA ---
+        // -----------------------------------------------------------------------------------
+        
+        // 1. Get the current selection state for the device's userId
+        const { currentPlant, currentStage, selectionTime } = await getCurrentSelection(appStateCollection, userId);
 
+        // 2. If selectionTime is null/undefined, it means the 'plantSelection' document doesn't exist.
+        if (!selectionTime) {
+            console.log(`Sensor data IGNORED: No plant selected for device ${userId}.`);
+            // Return empty commands (200 OK) to the ESP32 to prevent it from failing, 
+            // but without performing the database insert or control logic.
+            return NextResponse.json({
+                light: 0,
+                ph_up_pump: false,
+                ph_down_pump: false,
+                ppm_a_pump: false,
+                ppm_b_pump: false,
+            }, { status: 200 });
+        }
+        
+        // -----------------------------------------------------------------------------------
+        
+        // --- PROCEED WITH DATA INSERTION AND CONTROL LOGIC ONLY IF A PLANT IS SELECTED ---
+        
         const sensorDataWithTimestamp = {
             ...data,
             userId: userId,
             timestamp: new Date().toISOString(),
         };
 
-        await sensorCollection.insertOne(sensorDataWithTimestamp);
+        await sensorCollection.insertOne(sensorDataWithTimestamp); // Data is inserted here
 
-        const { currentPlant, currentStage } = await getCurrentSelection(
-            appStateCollection,
-            userId
-        );
         const { deviceCommands } = await processSensorData(
             sensorDataWithTimestamp,
             currentPlant,
@@ -281,7 +247,6 @@ export async function POST(request) {
         );
     }
 }
-
 
 // GET handler - for dashboard data and historical data
 export async function GET(request) {
