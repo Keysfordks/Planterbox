@@ -190,8 +190,10 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
                 rangeRule('ph_min', 'ph_max', 'pH'),
               ]}
             >
-              <InputNumber style={{ width: '100%' }} step={0.1} min={0} max={14} />
+              {/* allow hundredths: 0.01 steps, show 2 decimals */}
+              <InputNumber style={{ width: '100%' }} step={0.01} precision={2} min={0} max={14} />
             </Form.Item>
+
             <Form.Item
               label="pH Max"
               name="ph_max"
@@ -201,10 +203,11 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
                 rangeRule('ph_min', 'ph_max', 'pH'),
               ]}
             >
-              <InputNumber style={{ width: '100%' }} step={0.1} min={0} max={14} />
+              <InputNumber style={{ width: '100%' }} step={0.01} precision={2} min={0} max={14} />
             </Form.Item>
           </div>
         </Form.Item>
+
 
         {/* PPM */}
         <Form.Item style={{ marginBottom: 0 }}>
