@@ -1,80 +1,90 @@
 import { NextResponse } from "next/server";
+import clientPromise from "../../../lib/mongodb";
+import { auth } from "../auth/[...nextauth]/route";
+import { ObjectId } from "mongodb"; 
 
-// FIX 1: Access lib/mongodb. This path works for files inside src/app/api/
-import clientPromise from "../../../lib/mongodb"; 
-
-// FIX 2: Access auth, which is a sibling of the archives folder inside /api
-import { auth } from "../auth/[...nextauth]/route"; 
-import { ObjectId } from 'mongodb';
-
-// GET handler: Fetches a list of all archived projects for the user.
-export async function GET() {
-  const session = await auth();
-  if (!session || !session.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+export async function GET(request) {
   try {
+    const session = await auth();
+    if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const userId = session.user.id;
     const client = await clientPromise;
     const db = client.db("planterbox");
-    const collection = db.collection("archived_projects");
+    const archives = db.collection("archives");
+    const profiles = db.collection("plant_profiles");
 
-    // Fetch only the necessary fields for the list view
-    const projects = await collection
-      .find({ userId: session.user.id })
-      .project({ 
-        _id: 1, 
-        plantName: 1, 
-        startDate: 1, 
-        endDate: 1, 
-        finalStage: 1 
-      })
-      .sort({ endDate: -1 }) // Show most recent archives first
+    const { searchParams } = new URL(request.url);
+    const projectId = searchParams.get("projectId");
+    const detail = searchParams.get("detail") === "true";
+
+   if (projectId) {
+  const _id = (() => {
+    try {
+      return new ObjectId(projectId);
+    } catch {
+      return null;
+    }
+  })();
+
+  const project = _id ? await archives.findOne({ _id, userId }) : null;
+  if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (!detail) return NextResponse.json({ project }, { status: 200 });
+
+  const profile = await profiles.findOne(
+    {
+      plant_name: project.plantName,
+      stage: project.finalStage,
+      $or: [{ userId }, { userId: { $exists: false } }]
+    },
+    { sort: { userId: -1 } }
+  );
+
+  return NextResponse.json(
+    { project, idealConditions: profile?.ideal_conditions ?? null },
+    { status: 200 }
+  );
+}
+
+
+    // List all projects
+    const list = await archives
+      .find({ userId })
+      .sort({ endDate: -1 })
+      .project({ plantName: 1, finalStage: 1, startDate: 1, endDate: 1 })
       .toArray();
 
-    return NextResponse.json({ projects });
-
-  } catch (error) {
-    console.error("Error fetching archives:", error);
-    return NextResponse.json({ error: "Failed to fetch archive list" }, { status: 500 });
+    return NextResponse.json({ projects: list }, { status: 200 });
+  } catch (err) {
+    console.error("GET /api/archives error:", err);
+    return NextResponse.json({ error: "Failed to fetch archives" }, { status: 500 });
   }
 }
 
-// DELETE handler: Deletes a specific archived project.
 export async function DELETE(request) {
-  const session = await auth();
-  if (!session || !session.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  
-  const { searchParams } = new URL(request.url);
-  const projectId = searchParams.get("projectId");
-
-  if (!projectId) {
-    return NextResponse.json({ error: "Missing project ID" }, { status: 400 });
-  }
-
   try {
+    const session = await auth();
+    if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const userId = session.user.id;
     const client = await clientPromise;
     const db = client.db("planterbox");
-    const collection = db.collection("archived_projects");
+    const archives = db.collection("archives");
 
-    const result = await collection.deleteOne({ 
-      _id: new ObjectId(projectId), // Assuming you use ObjectId
-      userId: session.user.id // Security check
-    });
+    const { searchParams } = new URL(request.url);
+    const projectId = searchParams.get("projectId");
+    if (!projectId) return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
 
-    if (result.deletedCount === 0) {
-      return NextResponse.json({ message: "Project not found or not authorized" }, { status: 404 });
-    }
+    const { ObjectId } = await import("mongodb");
+    const _id = new ObjectId(projectId);
 
-    // NOTE: We do NOT delete sensor_data here. Sensor data is kept for historical context 
-    // and is filtered by date/user ID when requested.
+    const res = await archives.deleteOne({ _id, userId });
+    if (res.deletedCount === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    return NextResponse.json({ message: "Archived project deleted successfully" });
-
-  } catch (error) {
-    console.error("Error deleting archive:", error);
-    return NextResponse.json({ error: "Failed to delete archived project" }, { status: 500 });
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (err) {
+    console.error("DELETE /api/archives error:", err);
+    return NextResponse.json({ error: "Failed to delete archive" }, { status: 500 });
   }
 }

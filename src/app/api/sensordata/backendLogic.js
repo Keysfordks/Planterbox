@@ -1,65 +1,232 @@
-import clientPromise from '../../../lib/mongodb';
+import { NextResponse } from "next/server";
+import clientPromise from "../../../lib/mongodb";
+import { processSensorData } from "./backendLogic";
+import { auth } from "../auth/[...nextauth]/route";
 
-// Check range helper
-const inRange = (v, min, max) => typeof v === 'number' && min != null && max != null && v >= min && v <= max;
-
-/**
- * Decide device commands from latest sensor sample and the selected plant profile.
- * @param {Object} latestData - {temperature, humidity, ph, ppm, ...}
- * @param {string} selectedPlant
- * @param {string} selectedStage
- * @param {string|undefined} ownerId - userId that owns the plant profile (optional)
- * @returns {{deviceCommands: {light:number, ph_up_pump:boolean, ph_down_pump:boolean, ppm_a_pump:boolean, ppm_b_pump:boolean}, sensorStatus: Object}}
+/** Get the current plant selection.
+ * Tries an exact key first (deviceId or userId), then falls back to latest any.
+ * Returns { plant, stage, ownerId, selectionDoc }
  */
-export async function processSensorData(latestData, selectedPlant, selectedStage, ownerId) {
-  const client = await clientPromise;
-  const db = client.db('planterbox');
-  const plantProfiles = db.collection('plant_profiles');
+async function getSelection(appState, exactKey) {
+  // try an exact match first
+  let doc = await appState.findOne({ state_name: "plantSelection", userId: exactKey });
+  if (doc?.value?.plant && doc?.value?.stage) {
+    return { plant: doc.value.plant, stage: doc.value.stage, ownerId: doc.userId, selectionDoc: doc };
+  }
+  // latest any
+  doc = await appState.findOne({ state_name: "plantSelection" }, { sort: { "value.timestamp": -1 } });
+  return {
+    plant: doc?.value?.plant || "default",
+    stage: doc?.value?.stage || "seedling",
+    ownerId: doc?.userId,
+    selectionDoc: doc || null
+  };
+}
 
-  // Prefer a user-specific profile; otherwise fall back to global preset
-  const profile = await plantProfiles.findOne(
+// Save one sensor sample
+async function saveSensor(db, sample) {
+  const sens = db.collection("sensordata");
+  await sens.insertOne(sample);
+}
+
+// Historical data helper (6h bins)
+async function getHistoricalData(db, deviceId, ownerId, plant, stage) {
+  const sens = db.collection("sensordata");
+  const profiles = db.collection("plant_profiles");
+
+  // Ideal conditions (prefer owner-specific)
+  const profile = await profiles.findOne(
     {
-      plant_name: selectedPlant,
-      stage: selectedStage,
+      plant_name: plant,
+      stage,
       ...(ownerId ? { $or: [{ userId: ownerId }, { userId: { $exists: false } }] } : { userId: { $exists: false } })
     },
     { sort: ownerId ? { userId: -1 } : undefined }
   );
+  const ideal = profile?.ideal_conditions || null;
 
-  const ideal = profile?.ideal_conditions;
-  // If we cannot find a profile, return safe defaults
-  if (!ideal || !latestData) {
-    return {
-      deviceCommands: { light: 0, ph_up_pump: false, ph_down_pump: false, ppm_a_pump: false, ppm_b_pump: false },
-      sensorStatus: { temperature: 'UNKNOWN', humidity: 'UNKNOWN', ph: 'UNKNOWN', ppm: 'UNKNOWN' }
+  // Pull last 7 days of data for that device
+  const end = new Date();
+  const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  // If your timestamps are stored as ISO strings, match on range using strings; better is to store real Dates.
+  const historicalData = await sens.aggregate([
+    { $match: { userId: deviceId, timestamp: { $gte: start.toISOString() } } },
+    // round into 6-hour buckets
+    {
+      $addFields: {
+        tsDate: { $toDate: "$timestamp" }
+      }
+    },
+    {
+      $group: {
+        _id: {
+          year: { $year: "$tsDate" },
+          dayOfYear: { $dayOfYear: "$tsDate" },
+          sixHourBlock: { $floor: { $divide: [{ $hour: "$tsDate" }, 6] } }
+        },
+        timestamp: { $max: "$tsDate" },
+        temperature: { $avg: "$temperature" },
+        humidity: { $avg: "$humidity" },
+        ph: { $avg: "$ph" },
+        ppm: { $avg: "$ppm" }
+      }
+    },
+    { $sort: { "timestamp": 1 } },
+    {
+      $project: {
+        _id: 0,
+        timestamp: 1,
+        temperature: { $round: ["$temperature", 2] },
+        humidity: { $round: ["$humidity", 2] },
+        ph: { $round: ["$ph", 2] },
+        ppm: { $round: ["$ppm", 0] }
+      }
+    }
+  ]).toArray();
+
+  const selectionStartTime = null; // (optional) if you store this in app_state.value.timestamp when selecting
+
+  return { historicalData, idealConditions: ideal, selectionStartTime };
+}
+
+export async function POST(request) {
+  try {
+    const client = await clientPromise;
+    const db = client.db("planterbox");
+    const appState = db.collection("app_state");
+    const archives = db.collection("archives");
+    const plantProfileCollection = db.collection("plant_profiles"); // FIX for abort_plant path
+
+    const session = await auth().catch(() => null);
+    const authUserId = session?.user?.id;
+
+    const body = await request.json();
+    const action = body?.action;
+
+    if (action === "select_plant") {
+      if (!authUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      const { selectedPlant, selectedStage } = body || {};
+      if (!selectedPlant || !selectedStage) {
+        return NextResponse.json({ error: "Missing plant or stage" }, { status: 400 });
+      }
+      await appState.updateOne(
+        { state_name: "plantSelection", userId: authUserId },
+        { $set: { value: { plant: selectedPlant, stage: selectedStage, timestamp: new Date().toISOString() } } },
+        { upsert: true }
+      );
+      return NextResponse.json({ ok: true }, { status: 200 });
+    }
+
+    if (action === "abort_plant") {
+      if (!authUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+      const selection = await appState.findOne({ state_name: "plantSelection", userId: authUserId });
+      if (selection?.value?.plant && selection?.value?.stage) {
+        // Optional: write an archive entry
+        await archives.insertOne({
+          userId: authUserId,
+          plantName: selection.value.plant,
+          finalStage: selection.value.stage,
+          startDate: selection.value.timestamp ?? null,
+          endDate: new Date().toISOString()
+        });
+      }
+
+      await appState.deleteOne({ state_name: "plantSelection", userId: authUserId });
+      return NextResponse.json({ ok: true }, { status: 200 });
+    }
+
+    // Device upload: store sample + compute commands
+    const deviceId = body.deviceId || "default_device";
+    const sensorData = {
+      ...body,
+      userId: deviceId, // namespace by device ID
+      timestamp: body.timestamp || new Date().toISOString()
     };
+    await saveSensor(db, sensorData);
+
+    // Determine selection (prefer deviceId match, fallback to latest any)
+    const { plant, stage, ownerId } = await getSelection(appState, deviceId);
+
+    const { deviceCommands } = await processSensorData(sensorData, plant, stage, ownerId);
+
+    return NextResponse.json(deviceCommands, { status: 200 });
+  } catch (err) {
+    console.error("POST /api/sensordata error:", err);
+    // Safe defaults
+    return NextResponse.json(
+      { light: 0, light_hours_per_day: 0, ph_up_pump: false, ph_down_pump: false, ppm_a_pump: false, ppm_b_pump: false },
+      { status: 200 }
+    );
   }
+}
 
-  const { temperature, humidity, ph, ppm } = latestData;
-  const {
-    temp_min, temp_max,
-    humidity_min, humidity_max,
-    ph_min, ph_max,
-    ppm_min, ppm_max,
-    light_pwm_cycle = 0
-  } = ideal;
+export async function GET(request) {
+  try {
+    const client = await clientPromise;
+    const db = client.db("planterbox");
+    const sens = db.collection("sensordata");
+    const appState = db.collection("app_state");
 
-  // Status strings for UI
-  const sensorStatus = {
-    temperature: inRange(temperature, temp_min, temp_max) ? 'IDEAL' : 'NOT IDEAL',
-    humidity: inRange(humidity, humidity_min, humidity_max) ? 'IDEAL' : 'NOT IDEAL',
-    ph: inRange(ph, ph_min, ph_max) ? 'IDEAL' : 'NOT IDEAL',
-    ppm: ppm > ppm_max ? 'DILUTE_WATER' : (inRange(ppm, ppm_min, ppm_max) ? 'IDEAL' : 'NOT IDEAL')
-  };
+    const session = await auth().catch(() => null);
+    const authUserId = session?.user?.id || null;
 
-  // Naive control: obey profile PWM for light; toggle pumps based on thresholds
-  const deviceCommands = {
-    light: Number(light_pwm_cycle) || 0,
-    ph_up_pump: typeof ph === 'number' && ph < ph_min,     // raise pH
-    ph_down_pump: typeof ph === 'number' && ph > ph_max,   // lower pH
-    ppm_a_pump: typeof ppm === 'number' && ppm < ppm_min,  // add nutrients A/B when ppm too low
-    ppm_b_pump: typeof ppm === 'number' && ppm < ppm_min
-  };
+    const { searchParams } = new URL(request.url);
+    const growth = searchParams.get("growth") === "true";
+    const queryPlant = searchParams.get("plant");
+    const queryStage = searchParams.get("stage");
+    const deviceId = searchParams.get("deviceId") || "default_device";
 
-  return { deviceCommands, sensorStatus };
+    // 1) Growth endpoint for HistoricalCharts
+    if (growth) {
+      const sel = await getSelection(appState, authUserId ?? deviceId);
+      const plant = queryPlant || sel.plant;
+      const stage = queryStage || sel.stage;
+
+      const { historicalData, idealConditions, selectionStartTime } =
+        await getHistoricalData(db, deviceId, sel.ownerId, plant, stage);
+
+      return NextResponse.json({ historicalData, idealConditions, selectionStartTime }, { status: 200 });
+    }
+
+    // 2) Ideal lookup for dashboard (plant & stage provided)
+    if (queryPlant && queryStage) {
+      const { ownerId } = await getSelection(appState, authUserId ?? deviceId);
+      const profiles = db.collection("plant_profiles");
+      const profile = await profiles.findOne(
+        {
+          plant_name: queryPlant,
+          stage: queryStage,
+          ...(ownerId ? { $or: [{ userId: ownerId }, { userId: { $exists: false } }] } : { userId: { $exists: false } })
+        },
+        { sort: ownerId ? { userId: -1 } : undefined }
+      );
+      return NextResponse.json({ ideal_conditions: profile?.ideal_conditions ?? null }, { status: 200 });
+    }
+
+    // 3) Default: latest sample + computed statuses for dashboard tiles
+    const latest = await sens
+      .find({ userId: deviceId })
+      .sort({ timestamp: -1 })
+      .limit(1)
+      .next();
+
+    const { plant, stage, ownerId } = await getSelection(appState, authUserId ?? deviceId);
+    const { deviceCommands, sensorStatus, ideal } = await processSensorData(latest || {}, plant, stage, ownerId);
+
+    return NextResponse.json(
+      {
+        sensorData: latest || null,
+        sensorStatus,
+        deviceCommands,
+        idealConditions: ideal,
+        currentSelection: { plant, stage, deviceId }
+      },
+      { status: 200 }
+    );
+  } catch (err) {
+    console.error("GET /api/sensordata error:", err);
+    return NextResponse.json({ error: "Failed to fetch data" }, { status: 500 });
+  }
 }
