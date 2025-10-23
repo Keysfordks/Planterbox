@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import clientPromise from "../../../lib/mongodb";
 import { auth } from "../auth/[...nextauth]/route";
-import { ObjectId } from "mongodb"; 
+import { ObjectId } from "mongodb";
 
 export async function GET(request) {
   try {
@@ -18,20 +18,18 @@ export async function GET(request) {
     const projectId = searchParams.get("projectId");
     const detail = searchParams.get("detail") === "true";
 
-      if (projectId) {
-      const _id = (() => {
-        try {
-          return new ObjectId(projectId);
-        } catch {
-          return null;
-        }
-      })();
-
+    if (projectId) {
+      let _id = null;
+      try { _id = new ObjectId(projectId); } catch {}
       const project = _id ? await archives.findOne({ _id, userId }) : null;
+
       if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-      if (!detail) return NextResponse.json({ project }, { status: 200 });
+      if (!detail) {
+        return NextResponse.json({ project }, { status: 200 });
+      }
 
+      // Optionally fetch ideal conditions for the plant at final stage
       const profile = await profiles.findOne(
         {
           plant_name: project.plantName,
@@ -41,12 +39,11 @@ export async function GET(request) {
         { sort: { userId: -1 } }
       );
 
-      return NextResponse.json(
-        { project, idealConditions: profile?.ideal_conditions ?? null },
-        { status: 200 }
-      );
+      return NextResponse.json({
+        project,
+        idealConditions: profile?.ideal_conditions ?? null
+      }, { status: 200 });
     }
-
 
     // List all projects
     const list = await archives
@@ -76,7 +73,6 @@ export async function DELETE(request) {
     const projectId = searchParams.get("projectId");
     if (!projectId) return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
 
-    const { ObjectId } = await import("mongodb");
     const _id = new ObjectId(projectId);
 
     const res = await archives.deleteOne({ _id, userId });
