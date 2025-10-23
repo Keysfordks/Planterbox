@@ -3,8 +3,9 @@ import clientPromise from "../../../lib/mongodb";
 import { processSensorData } from "./backendLogic";
 import { auth } from "../auth/[...nextauth]/route";
 
-// Define the static ID used by the ESP32 for all device-related queries
-const DEVICE_ID = "default_device"; 
+// --- CRITICAL FIX: Define the Device ID globally ---
+// This is the static ID the ESP32 posts data under and the one the app state must use.
+const DEVICE_ID = "default_device";
 
 // ----------------------------------------------------------------------
 // HELPER FUNCTIONS
@@ -12,7 +13,6 @@ const DEVICE_ID = "default_device";
 
 // Get current plant and stage selection for a specific user/device
 async function getCurrentSelection(appStateCollection, userId) {
-  // NOTE: userId here can be the authUserId (for profiles) or DEVICE_ID (for state)
   const appState = await appStateCollection.findOne({
     state_name: "plantSelection",
     userId: userId,
@@ -29,7 +29,7 @@ async function getIdealConditions(plantProfileCollection, plantName, stageName, 
     const idealConditions = await plantProfileCollection.findOne({ 
         plant_name: plantName, 
         stage: stageName,
-        userId: userId, 
+        userId: userId, // Ensure you fetch the user's specific profile
     });
     return idealConditions?.ideal_conditions || {};
 }
@@ -39,15 +39,13 @@ async function getIdealConditions(plantProfileCollection, plantName, stageName, 
 // HISTORICAL DATA FUNCTION (MongoDB Aggregation)
 // ----------------------------------------------------------------------
 
+// NOTE: This now uses authUserId for profile lookups and DEVICE_ID for sensor data
 async function getHistoricalData(appStateCollection, sensorCollection, plantProfileCollection, authUserId) {
   try {
-    // CRITICAL: We use DEVICE_ID for sensor data lookups, but authUserId for profiles
-    const historyQueryId = DEVICE_ID; // Use device ID for the actual sensor data
-
-    // 1. Get current plant and stage selection and start time (using AUTH ID or DEVICE ID)
-    const { currentPlant, currentStage, selectionTime } = await getCurrentSelection(appStateCollection, authUserId);
+    // 1. Get current plant and stage selection and start time (using DEVICE_ID)
+    const { currentPlant, currentStage, selectionTime } = await getCurrentSelection(appStateCollection, DEVICE_ID);
     
-    // 2. Fetch ideal conditions for the current selection (using AUTH ID)
+    // 2. Fetch ideal conditions for the current selection (using AUTH USER ID)
     const idealConditions = await getIdealConditions(plantProfileCollection, currentPlant, currentStage, authUserId);
 
     // Define the start date: use the plant selection time, or a default fallback (e.g., 7 days ago)
@@ -56,10 +54,10 @@ async function getHistoricalData(appStateCollection, sensorCollection, plantProf
     const startTime = selectionStartTime;
 
     const pipeline = [
-      // --- STAGE 1: Filter by User ID (Device ID) and Time ---
+      // --- STAGE 1: Filter by User ID (DEVICE_ID) and Time ---
       {
         $match: {
-          userId: historyQueryId, // Filter by the DEVICE_ID
+          userId: DEVICE_ID, // Use the device ID for sensor data
           timestamp: { $gte: startTime.toISOString() }, 
           ph: { $exists: true }, 
           ppm: { $exists: true }, 
@@ -88,8 +86,9 @@ async function getHistoricalData(appStateCollection, sensorCollection, plantProf
       // --- STAGE 3: Sort Chronologically ---
       {
         $sort: { "_id": 1 }
-      },
-      // --- STAGE 4: Reshape/Project ---
+      }
+      // ... (rest of the pipeline remains the same)
+      ,
       {
         $project: {
           _id: 0,
@@ -106,7 +105,7 @@ async function getHistoricalData(appStateCollection, sensorCollection, plantProf
 
     return NextResponse.json({
       historicalData,
-      idealConditions,
+      idealConditions, 
       selectionStartTime: startTime.toISOString(),
     });
 
@@ -138,15 +137,16 @@ export async function POST(request) {
         const isWebAppRequest =
             data.action === "select_plant" || data.action === "abort_plant";
 
-        let userId = null; // The ID used for the database operation
+        let userId = null; // The ID used for the database operation (will be DEVICE_ID or authUserId)
+        let authUserId = null; // For operations that require the logged-in user's ID (e.g., profiles)
 
         if (isWebAppRequest) {
             const session = await auth();
             if (!session || !session.user?.id) {
                 return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
             }
-            // For web app actions, we use the device ID to manipulate the device state
-            // to keep it consistent with what the ESP32 checks for.
+            authUserId = session.user.id;
+            // CRITICAL FIX: Web app actions must target the DEVICE_ID for app_state
             userId = DEVICE_ID; 
         } else {
             // This is the ESP32 POST request. The ID is the device ID.
@@ -162,11 +162,10 @@ export async function POST(request) {
             }
 
             // CRITICAL FIX: The plant selection state is saved under the DEVICE_ID
-            // so the ESP32 can look it up successfully.
             await appStateCollection.updateOne(
                 {
                     state_name: "plantSelection",
-                    userId: userId, // userId is now DEVICE_ID
+                    userId: userId, // This is DEVICE_ID
                 },
                 {
                     $set: {
@@ -186,18 +185,16 @@ export async function POST(request) {
         }
 
         if (data.action === "abort_plant") {
-            // Fetch the active plant state
+            // ... (keep your abort_plant logic as it was in the previous correct version)
+            
+            // Fetch the active plant state (targets DEVICE_ID)
             const appState = await appStateCollection.findOne({
                 state_name: "plantSelection",
-                userId: userId, // userId is DEVICE_ID
+                userId: userId, 
             });
 
             const startDate = appState?.value?.timestamp;
             let archiveCreated = false;
-            
-            // Assume the authenticated user is the one whose profile we want to use for the archive
-            const session = await auth();
-            const authUserId = session.user.id; 
 
             // --- 1. ATTEMPT TO CREATE ARCHIVE RECORD (IF STATE EXISTS) ---
             if (startDate) {
@@ -221,7 +218,8 @@ export async function POST(request) {
                     });
 
                     // Construct the archive object
-                    const archivedProject = {
+                    const archiveCollection = db.collection("archived_projects");
+                    await archiveCollection.insertOne({
                         userId: authUserId, // Archive under the authenticated user's ID
                         deviceId: DEVICE_ID,
                         plantName: plantName,
@@ -231,10 +229,7 @@ export async function POST(request) {
                         idealConditions: plantProfile?.ideal_conditions || {},
                         finalSensorData: latestData || null, 
                         sensorDataQueryKey: startDate, 
-                    };
-                    
-                    const archiveCollection = db.collection("archived_projects");
-                    await archiveCollection.insertOne(archivedProject);
+                    });
                     
                     archiveCreated = true;
 
@@ -258,13 +253,13 @@ export async function POST(request) {
 
 
         // -----------------------------------------------------------------------------------
-        // --- CRITICAL FIX: CHECK FOR ACTIVE PLANT SELECTION BEFORE SAVING SENSOR DATA ---
+        // --- PLANT SELECTION CHECK (Saves sensor data only if a plant is selected) ---
         // -----------------------------------------------------------------------------------
         
         // 1. Get the current selection state using the device's userId (which is DEVICE_ID)
-        const { currentPlant, currentStage, selectionTime } = await getCurrentSelection(appStateCollection, userId);
+        const { selectionTime } = await getCurrentSelection(appStateCollection, userId);
 
-        // 2. If selectionTime is null/undefined, ignore the data
+        // 2. If selectionTime is null/undefined, IGNORE the data
         if (!selectionTime) {
             console.log(`Sensor data IGNORED: No plant selected for device ${userId}.`);
             // Return empty commands (200 OK) to the ESP32
@@ -274,6 +269,7 @@ export async function POST(request) {
                 ph_down_pump: false,
                 ppm_a_pump: false,
                 ppm_b_pump: false,
+                light_motor_cmd: "STOP",
             }, { status: 200 });
         }
         
@@ -289,7 +285,10 @@ export async function POST(request) {
 
         await sensorCollection.insertOne(sensorDataWithTimestamp); // Data is inserted here
 
-        // Use the current plant for command calculation
+        const { currentPlant, currentStage } = await getCurrentSelection(
+            appStateCollection,
+            userId // This is DEVICE_ID
+        );
         const { deviceCommands } = await processSensorData(
             sensorDataWithTimestamp,
             currentPlant,
@@ -307,6 +306,7 @@ export async function POST(request) {
                 ph_down_pump: false,
                 ppm_a_pump: false,
                 ppm_b_pump: false,
+                light_motor_cmd: "STOP",
             },
             { status: 500 }
         );
@@ -323,7 +323,7 @@ export async function GET(request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const authUserId = session.user.id; // Authenticated user ID (for profiles)
+    // --- CRITICAL FIX: Use the constant DEVICE_ID ---
     const client = await clientPromise;
     const db = client.db("planterbox");
     const sensorCollection = db.collection("sensordata");
@@ -332,13 +332,13 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
 
-    // Handle historical data request (Uses AUTH ID for app state and DEVICE ID for data)
+    // Handle historical data request
     if (searchParams.get("growth") === "true") {
-      // getHistoricalData uses authUserId to look up plant selection/profiles
-      return getHistoricalData(appStateCollection, sensorCollection, plantProfileCollection, authUserId);
+      // Pass authUserId to allow historical data to fetch the user's profile
+      return getHistoricalData(appStateCollection, sensorCollection, plantProfileCollection, session.user.id);
     }
 
-    // Handle ideal conditions request (Uses AUTH ID for profile lookup)
+    // Handle ideal conditions request
     const plantName = searchParams.get("plant");
     const stageName = searchParams.get("stage");
 
@@ -346,7 +346,7 @@ export async function GET(request) {
       const idealConditions = await plantProfileCollection.findOne({
         plant_name: plantName,
         stage: stageName,
-        userId: authUserId, // Use authenticated user ID
+        userId: session.user.id, // Use authenticated user ID for profiles
       });
 
       return NextResponse.json({
@@ -355,32 +355,28 @@ export async function GET(request) {
     }
 
     // Handle latest sensor data request (default)
-    // FIX: Fetch latest sensor data using the DEVICE_ID
     const latestData = await sensorCollection
-      .find({ userId: DEVICE_ID })
+      .find({ userId: DEVICE_ID }) // Fetch data using DEVICE_ID
       .sort({ timestamp: -1 })
       .limit(1)
       .next();
 
-    // Use the DEVICE_ID to retrieve the plant selection state
     const { currentPlant, currentStage } = await getCurrentSelection(
       appStateCollection,
-      DEVICE_ID
+      DEVICE_ID // Get state using DEVICE_ID
     );
-    
-    // Pass latestData to backendLogic for command calculation
     const { deviceCommands, sensorStatus } = await processSensorData(
       latestData,
       currentPlant,
       currentStage,
-      authUserId // Pass authUserId to the backend logic (if it needs it for logging/profiles)
+      session.user.id // Pass authUserId to the backend logic (for profile lookups)
     );
 
     // Prepare sensor data response
     let sensorDataToReturn;
     if (latestData) {
-      // CRITICAL FIX: Explicitly exclude 'userId'
-      const { tds, _id, userId, ...cleanedData } = latestData;
+      // Hide _id, tds, and userId
+      const { tds, _id, userId, ...cleanedData } = latestData; 
       sensorDataToReturn = cleanedData;
     } else {
       sensorDataToReturn = {
