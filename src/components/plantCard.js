@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import { Card, Tag, Button, Modal, message } from 'antd';
-import { ExclamationCircleOutlined } from '@ant-design/icons';
+import { ExclamationCircleOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import styles from '../styles/plantcard.module.css';
 
-export default function PlantCard({ plant, onDelete }) {
+export default function PlantCard({ plant, onDelete, onSelect }) { // Added onSelect prop
   const { _id, plant_name, stage, ideal_conditions } = plant;
   const [deleting, setDeleting] = useState(false);
+  const [selecting, setSelecting] = useState(false); // State for the new Select Plant button
 
   const getStageColor = (stage) => {
     const colors = {
@@ -30,26 +31,68 @@ export default function PlantCard({ plant, onDelete }) {
   const tempMax = conditions.temp_max || 'N/A';
   const humidityMin = conditions.humidity_min || 'N/A';
   const humidityMax = conditions.humidity_max || 'N/A';
-
-  const handleAbortPlant = () => {
-    console.log('Abort button clicked for plant:', _id); // Debug log
-    
+  
+  // --- NEW FUNCTION: Selects the plant profile for the device (Writes to app_state) ---
+  const handleSelectPlant = () => {
     Modal.confirm({
-      title: 'Abort Plant Profile?',
+      title: 'Start Grow Cycle?',
+      icon: <CheckCircleOutlined />,
+      content: `Are you sure you want to start a new grow cycle with ${plant_name} (${stage})? This will override any current selection.`,
+      okText: 'Yes, Start Grow',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          setSelecting(true);
+          
+          // CRITICAL: Post to /api/sensordata with the required action and data
+          const response = await fetch('/api/sensordata', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              action: 'select_plant', // REQUIRED for the sensordata API to process it
+              selectedPlant: plant_name,
+              selectedStage: stage,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to select plant');
+          }
+
+          message.success(`Grow cycle started for ${plant_name}!`);
+          
+          if (onSelect) { // Optional callback to refresh the dashboard
+            onSelect();
+          }
+
+        } catch (error) {
+          console.error('Error selecting plant:', error);
+          message.error('Failed to start grow cycle.');
+        } finally {
+          setSelecting(false);
+        }
+      },
+    });
+  };
+
+  // --- REINSTATED ORIGINAL FUNCTION: Deletes the profile from plant_profiles ---
+  const handleDeletePlant = () => {
+    Modal.confirm({
+      title: 'Delete Plant Profile?',
       icon: <ExclamationCircleOutlined />,
-      content: `Are you sure you want to delete the ${plant_name} (${stage}) profile? This action cannot be undone.`,
+      content: `Are you sure you want to permanently delete the ${plant_name} (${stage}) profile? This action cannot be undone.`,
       okText: 'Yes, Delete',
       okType: 'danger',
       cancelText: 'Cancel',
       onOk: async () => {
-        console.log('Delete confirmed for:', _id); // Debug log
         try {
           setDeleting(true);
+          // NOTE: This relies on the separate /api/plants DELETE handler
           const response = await fetch(`/api/plants?id=${_id}`, {
             method: 'DELETE',
           });
-
-          console.log('Delete response:', response.status); // Debug log
 
           if (!response.ok) {
             throw new Error('Failed to delete plant');
@@ -72,6 +115,7 @@ export default function PlantCard({ plant, onDelete }) {
 
   return (
     <div className={styles.plantCard}>
+      
       <div className={styles.cardHeader}>
         <h2 className={styles.plantTitle}>
           {plant_name.charAt(0).toUpperCase() + plant_name.slice(1)} - {stage.charAt(0).toUpperCase() + stage.slice(1)}
@@ -119,13 +163,24 @@ export default function PlantCard({ plant, onDelete }) {
       </div>
 
       <div className={styles.cardFooter}>
+        {/* NEW BUTTON: Selects the plant profile */}
+        <Button 
+          type="primary"
+          size="large"
+          loading={selecting}
+          onClick={handleSelectPlant}
+          style={{ marginRight: 8 }}
+        >
+          {selecting ? 'Starting...' : 'Select Plant'}
+        </Button>
+        {/* ORIGINAL BUTTON: Deletes the profile */}
         <Button 
           danger 
           size="large"
           loading={deleting}
-          onClick={handleAbortPlant}
+          onClick={handleDeletePlant} // Using the original delete function
         >
-          {deleting ? 'Deleting...' : 'Abort Plant'}
+          {deleting ? 'Deleting...' : 'Delete Profile'}
         </Button>
       </div>
     </div>
