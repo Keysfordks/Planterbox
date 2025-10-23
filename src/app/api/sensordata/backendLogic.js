@@ -1,109 +1,65 @@
 import clientPromise from '../../../lib/mongodb';
 
-// Helper function to check if a value is within a range
-const isWithinRange = (value, min, max) => {
-  if (value === null || min === undefined || max === undefined) return false;
-  return value >= min && value <= max;
-};
+// Check range helper
+const inRange = (v, min, max) => typeof v === 'number' && min != null && max != null && v >= min && v <= max;
 
-// DOSING_LOCKOUT_MS is reduced to 60 seconds (60000 ms)
-const DOSING_LOCKOUT_MS = 60000; 
-
-// This function processes the sensor data and plant selection
-export async function processSensorData(latestData, selectedPlant, selectedStage) {
+/**
+ * Decide device commands from latest sensor sample and the selected plant profile.
+ * @param {Object} latestData - {temperature, humidity, ph, ppm, ...}
+ * @param {string} selectedPlant
+ * @param {string} selectedStage
+ * @param {string|undefined} ownerId - userId that owns the plant profile (optional)
+ * @returns {{deviceCommands: {light:number, ph_up_pump:boolean, ph_down_pump:boolean, ppm_a_pump:boolean, ppm_b_pump:boolean}, sensorStatus: Object}}
+ */
+export async function processSensorData(latestData, selectedPlant, selectedStage, ownerId) {
   const client = await clientPromise;
   const db = client.db('planterbox');
-  const plantProfileCollection = db.collection('plant_profiles');
-  // Reference the app state collection
-  const appStateCollection = db.collection('app_state');
+  const plantProfiles = db.collection('plant_profiles');
 
-  // Query now filters by both plant_name and stage
-  const idealConditions = await plantProfileCollection.findOne({ 
-    plant_name: selectedPlant, 
-    stage: selectedStage 
-  });
-  
-  // Fetch the last dosing time and calculate if we are in lockout
-  const lastDoseState = await appStateCollection.findOne({ state_name: "lastDoseTimestamp" });
-  const lastDoseTime = lastDoseState?.value?.timestamp ? new Date(lastDoseState.value.timestamp).getTime() : 0;
-  const isDosingLocked = (Date.now() - lastDoseTime) < DOSING_LOCKOUT_MS;
+  // Prefer a user-specific profile; otherwise fall back to global preset
+  const profile = await plantProfiles.findOne(
+    {
+      plant_name: selectedPlant,
+      stage: selectedStage,
+      ...(ownerId ? { $or: [{ userId: ownerId }, { userId: { $exists: false } }] } : { userId: { $exists: false } })
+    },
+    { sort: ownerId ? { userId: -1 } : undefined }
+  );
 
-  let deviceCommands = {
-    // Include all specific pump commands
-    light: 0,
-    ph_up_pump: false,
-    ph_down_pump: false,
-    ppm_a_pump: false,
-    ppm_b_pump: false,
-  };
-
-  let sensorStatus = {
-    temperature: "Loading...",
-    humidity: "Loading...",
-    ph: "Loading...",
-    ppm: "Loading...",
-  };
-
-  if (latestData && idealConditions) {
-    const { temperature, humidity, ph, ppm } = latestData;
-    const { temp_min, temp_max, humidity_min, humidity_max, ph_min, ph_max, ppm_min, ppm_max, light_pwm_cycle } = idealConditions.ideal_conditions;
-
-    // Check if values are within the ideal ranges and set status
-    sensorStatus.temperature = isWithinRange(temperature, temp_min, temp_max) ? "IDEAL" : "NOT IDEAL";
-    sensorStatus.humidity = isWithinRange(humidity, humidity_min, humidity_max) ? "IDEAL" : "NOT IDEAL";
-    sensorStatus.ph = isWithinRange(ph, ph_min, ph_max) ? "IDEAL" : "NOT IDEAL";
-    
-  
-    if (ppm > ppm_max) {
-      sensorStatus.ppm = "DILUTE_WATER"; // Custom status for the frontend
-    } else {
-      sensorStatus.ppm = isWithinRange(ppm, ppm_min, ppm_max) ? "IDEAL" : "NOT IDEAL";
-    }
-
-
-    // Generate device commands based on ideal conditions
-    deviceCommands.light = light_pwm_cycle;
-    
-    // Closed-Loop Dosing Check
-    if (!isDosingLocked) {
-        let doseIssued = false;
-
-        // 1. pH Pump control logic (pH takes priority)
-        if (ph < ph_min) {
-            deviceCommands.ph_up_pump = true;
-            doseIssued = true;
-        } else if (ph > ph_max) {
-            deviceCommands.ph_down_pump = true;
-            doseIssued = true;
-        }
-
-        // 2. PPM Pump control logic (only check if no pH dose was issued)
-        // *** CRITICAL Only dose if ppm is LOW. If ppm > ppm_max (DILUTE_WATER), keep pumps OFF. ***
-        if (!doseIssued && ppm < ppm_min) {
-            deviceCommands.ppm_a_pump = true;
-            deviceCommands.ppm_b_pump = true;
-            doseIssued = true;
-        }
-        
-        // 3. Update the lastDoseTimestamp if a dose was issued
-        if (doseIssued) {
-             await appStateCollection.updateOne(
-                { state_name: "lastDoseTimestamp" },
-                { $set: { 
-                    value: { timestamp: new Date() }, 
-                    type: "system_state" 
-                } },
-                { upsert: true }
-            );
-             console.log("Dose Issued. System now in lockout for 30 seconds.");
-        }
-
-    } else {
-        // Log that dosing is skipped because of the lockout
-        console.log(`Dosing skipped: System locked until ${new Date(lastDoseTime + DOSING_LOCKOUT_MS).toLocaleTimeString()}`);
-    }
-
+  const ideal = profile?.ideal_conditions;
+  // If we cannot find a profile, return safe defaults
+  if (!ideal || !latestData) {
+    return {
+      deviceCommands: { light: 0, ph_up_pump: false, ph_down_pump: false, ppm_a_pump: false, ppm_b_pump: false },
+      sensorStatus: { temperature: 'UNKNOWN', humidity: 'UNKNOWN', ph: 'UNKNOWN', ppm: 'UNKNOWN' }
+    };
   }
+
+  const { temperature, humidity, ph, ppm } = latestData;
+  const {
+    temp_min, temp_max,
+    humidity_min, humidity_max,
+    ph_min, ph_max,
+    ppm_min, ppm_max,
+    light_pwm_cycle = 0
+  } = ideal;
+
+  // Status strings for UI
+  const sensorStatus = {
+    temperature: inRange(temperature, temp_min, temp_max) ? 'IDEAL' : 'NOT IDEAL',
+    humidity: inRange(humidity, humidity_min, humidity_max) ? 'IDEAL' : 'NOT IDEAL',
+    ph: inRange(ph, ph_min, ph_max) ? 'IDEAL' : 'NOT IDEAL',
+    ppm: ppm > ppm_max ? 'DILUTE_WATER' : (inRange(ppm, ppm_min, ppm_max) ? 'IDEAL' : 'NOT IDEAL')
+  };
+
+  // Naive control: obey profile PWM for light; toggle pumps based on thresholds
+  const deviceCommands = {
+    light: Number(light_pwm_cycle) || 0,
+    ph_up_pump: typeof ph === 'number' && ph < ph_min,     // raise pH
+    ph_down_pump: typeof ph === 'number' && ph > ph_max,   // lower pH
+    ppm_a_pump: typeof ppm === 'number' && ppm < ppm_min,  // add nutrients A/B when ppm too low
+    ppm_b_pump: typeof ppm === 'number' && ppm < ppm_min
+  };
 
   return { deviceCommands, sensorStatus };
 }
