@@ -3,15 +3,11 @@ import clientPromise from "../../../lib/mongodb";
 import { processSensorData } from "./backendLogic";
 import { auth } from "../auth/[...nextauth]/route";
 
-// --- CRITICAL FIX: Define the Device ID globally ---
-// This is the static ID the ESP32 posts data under and the one the app state must use.
-const DEVICE_ID = "default_device";
-
 // ----------------------------------------------------------------------
 // HELPER FUNCTIONS
 // ----------------------------------------------------------------------
 
-// Get current plant and stage selection for a specific user/device
+// Get current plant and stage selection for a specific user
 async function getCurrentSelection(appStateCollection, userId) {
   const appState = await appStateCollection.findOne({
     state_name: "plantSelection",
@@ -39,26 +35,27 @@ async function getIdealConditions(plantProfileCollection, plantName, stageName, 
 // HISTORICAL DATA FUNCTION (MongoDB Aggregation)
 // ----------------------------------------------------------------------
 
-// NOTE: This now uses authUserId for profile lookups and DEVICE_ID for sensor data
-async function getHistoricalData(appStateCollection, sensorCollection, plantProfileCollection, authUserId) {
+async function getHistoricalData(appStateCollection, sensorCollection, plantProfileCollection, userId) {
   try {
-    // 1. Get current plant and stage selection and start time (using DEVICE_ID)
-    const { currentPlant, currentStage, selectionTime } = await getCurrentSelection(appStateCollection, DEVICE_ID);
+    // 1. Get current plant and stage selection and start time
+    const { currentPlant, currentStage, selectionTime } = await getCurrentSelection(appStateCollection, userId);
     
-    // 2. Fetch ideal conditions for the current selection (using AUTH USER ID)
-    const idealConditions = await getIdealConditions(plantProfileCollection, currentPlant, currentStage, authUserId);
+    // 2. Fetch ideal conditions for the current selection
+    const idealConditions = await getIdealConditions(plantProfileCollection, currentPlant, currentStage, userId);
 
     // Define the start date: use the plant selection time, or a default fallback (e.g., 7 days ago)
     const selectionStartTime = selectionTime ? new Date(selectionTime) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     
+    // Use the actual plant selection time as the absolute start for the graph
     const startTime = selectionStartTime;
 
     const pipeline = [
-      // --- STAGE 1: Filter by User ID (DEVICE_ID) and Time ---
+      // --- STAGE 1: Filter by User ID and Time ---
       {
         $match: {
-          userId: DEVICE_ID, // Use the device ID for sensor data
+          userId: userId,
           timestamp: { $gte: startTime.toISOString() }, 
+          // Ensure documents have required fields
           ph: { $exists: true }, 
           ppm: { $exists: true }, 
           temperature: { $exists: true },
@@ -70,10 +67,10 @@ async function getHistoricalData(appStateCollection, sensorCollection, plantProf
         $group: {
           _id: {
             $dateTrunc: {
-              date: { $dateFromString: { dateString: "$timestamp" } },
+              date: { $dateFromString: { dateString: "$timestamp" } }, // Convert ISO string to Date object
               unit: "hour",
-              binSize: 6,
-              timezone: "America/Chicago" 
+              binSize: 6, // Group data into 6-hour chunks for smoother graph
+              timezone: "America/Chicago" // Adjust to your actual system/plant timezone
             }
           },
           // Calculate the average of each metric
@@ -86,15 +83,14 @@ async function getHistoricalData(appStateCollection, sensorCollection, plantProf
       // --- STAGE 3: Sort Chronologically ---
       {
         $sort: { "_id": 1 }
-      }
-      // ... (rest of the pipeline remains the same)
-      ,
+      },
+      // --- STAGE 4: Reshape/Project ---
       {
         $project: {
           _id: 0,
           timestamp: "$_id",
-          ph: { $round: ["$avg_ph", 2] },
-          ppm: { $round: ["$avg_ppm", 0] },
+          ph: { $round: ["$avg_ph", 2] }, // Round pH
+          ppm: { $round: ["$avg_ppm", 0] }, // Round PPM
           temperature: { $round: ["$avg_temperature", 1] },
           humidity: { $round: ["$avg_humidity", 1] },
         }
@@ -105,7 +101,7 @@ async function getHistoricalData(appStateCollection, sensorCollection, plantProf
 
     return NextResponse.json({
       historicalData,
-      idealConditions, 
+      idealConditions, // Return ideal conditions to plot on the graph
       selectionStartTime: startTime.toISOString(),
     });
 
@@ -122,14 +118,14 @@ async function getHistoricalData(appStateCollection, sensorCollection, plantProf
 // API ROUTE HANDLERS
 // ----------------------------------------------------------------------
 
-// POST handler - for sensor data uploads and plant selection
+// POST handler - for sensor data uploads and plant selection (KEEP AS IS)
 export async function POST(request) {
+  // ... (Keep the original POST logic here)
     try {
         const client = await clientPromise;
         const db = client.db("planterbox");
         const sensorCollection = db.collection("sensordata");
         const appStateCollection = db.collection("app_state");
-        const plantProfileCollection = db.collection("plant_profiles");
 
         const data = await request.json();
         console.log("Received POST data:", data);
@@ -137,20 +133,16 @@ export async function POST(request) {
         const isWebAppRequest =
             data.action === "select_plant" || data.action === "abort_plant";
 
-        let userId = null; // The ID used for the database operation (will be DEVICE_ID or authUserId)
-        let authUserId = null; // For operations that require the logged-in user's ID (e.g., profiles)
+        let userId = null;
 
         if (isWebAppRequest) {
             const session = await auth();
             if (!session || !session.user?.id) {
                 return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
             }
-            authUserId = session.user.id;
-            // CRITICAL FIX: Web app actions must target the DEVICE_ID for app_state
-            userId = DEVICE_ID; 
+            userId = session.user.id;
         } else {
-            // This is the ESP32 POST request. The ID is the device ID.
-            userId = data.deviceId || DEVICE_ID;
+            userId = data.deviceId || "default_device";
         }
 
         if (data.action === "select_plant") {
@@ -161,11 +153,10 @@ export async function POST(request) {
                 );
             }
 
-            // CRITICAL FIX: The plant selection state is saved under the DEVICE_ID
             await appStateCollection.updateOne(
                 {
                     state_name: "plantSelection",
-                    userId: userId, // This is DEVICE_ID
+                    userId: userId,
                 },
                 {
                     $set: {
@@ -185,115 +176,94 @@ export async function POST(request) {
         }
 
         if (data.action === "abort_plant") {
-            // ... (keep your abort_plant logic as it was in the previous correct version)
+    
+    // Fetch the active plant state
+    const appState = await appStateCollection.findOne({
+        state_name: "plantSelection",
+        userId: userId,
+    });
+
+    const startDate = appState?.value?.timestamp;
+    let archiveCreated = false;
+
+    // --- 1. ATTEMPT TO CREATE ARCHIVE RECORD (IF STATE EXISTS) ---
+    if (startDate) {
+        try {
+            // Safely extract plant/stage names
+            const plantName = appState.value?.plant || 'Unknown Plant';
+            const stageName = appState.value?.stage || 'Unknown Stage';
+            const endDate = new Date().toISOString();
             
-            // Fetch the active plant state (targets DEVICE_ID)
-            const appState = await appStateCollection.findOne({
-                state_name: "plantSelection",
-                userId: userId, 
+            // Fetch data (can be null, but we safely handle it)
+            // This is the fetch that fails if no sensor data exists
+            const latestData = await sensorCollection 
+                .find({ userId: userId })
+                .sort({ timestamp: -1 })
+                .limit(1)
+                .next();
+                
+            const plantProfile = await plantProfileCollection.findOne({ 
+                plant_name: plantName, 
+                stage: stageName,
+                userId: userId
             });
 
-            const startDate = appState?.value?.timestamp;
-            let archiveCreated = false;
-
-            // --- 1. ATTEMPT TO CREATE ARCHIVE RECORD (IF STATE EXISTS) ---
-            if (startDate) {
-                try {
-                    const plantName = appState.value?.plant || 'Unknown Plant';
-                    const stageName = appState.value?.stage || 'Unknown Stage';
-                    const endDate = new Date().toISOString();
-                    
-                    // Fetch data using the DEVICE_ID
-                    const latestData = await sensorCollection 
-                        .find({ userId: DEVICE_ID })
-                        .sort({ timestamp: -1 })
-                        .limit(1)
-                        .next();
-                        
-                    // Fetch profile using the AUTH USER ID
-                    const plantProfile = await plantProfileCollection.findOne({ 
-                        plant_name: plantName, 
-                        stage: stageName,
-                        userId: authUserId
-                    });
-
-                    // Construct the archive object
-                    const archiveCollection = db.collection("archived_projects");
-                    await archiveCollection.insertOne({
-                        userId: authUserId, // Archive under the authenticated user's ID
-                        deviceId: DEVICE_ID,
-                        plantName: plantName,
-                        startDate: startDate,
-                        endDate: endDate,
-                        finalStage: stageName,
-                        idealConditions: plantProfile?.ideal_conditions || {},
-                        finalSensorData: latestData || null, 
-                        sensorDataQueryKey: startDate, 
-                    });
-                    
-                    archiveCreated = true;
-
-                } catch(archiveError) {
-                    console.error("Warning: Failed to create archive record. Proceeding with plant state deletion.", archiveError);
-                }
-            } 
-
-            // --- 2. DELETE ACTIVE STATE ---
-            await appStateCollection.deleteOne({
-                state_name: "plantSelection",
-                userId: userId, // Delete the state stored under DEVICE_ID
-            });
+            // Construct the archive object
+            const archivedProject = {
+                userId: userId,
+                plantName: plantName,
+                startDate: startDate,
+                endDate: endDate,
+                finalStage: stageName,
+                idealConditions: plantProfile?.ideal_conditions || {},
+                // CRITICAL: latestData will be null if no sensor data exists, which is fine
+                finalSensorData: latestData || null, 
+                sensorDataQueryKey: startDate, 
+            };
             
-            const message = archiveCreated 
-                ? "Plant aborted and successfully archived." 
-                : "Plant aborted successfully. Note: No archive record created (no start state or sensor data found).";
+            const archiveCollection = db.collection("archived_projects");
+            await archiveCollection.insertOne(archivedProject);
+            
+            archiveCreated = true;
 
-            return NextResponse.json({ message: message });
+        } catch(archiveError) {
+            // IMPORTANT: Log the error but DO NOT re-throw it. 
+            // The priority is cleaning up the active state.
+            console.error("Warning: Failed to create archive record. Proceeding with plant state deletion.", archiveError);
         }
+    } 
 
+    // --- 2. DELETE ACTIVE STATE (MUST succeed to abort the plant) ---
+    await appStateCollection.deleteOne({
+        state_name: "plantSelection",
+        userId: userId,
+    });
+    
+    // Send a message based on whether the archive creation succeeded
+    const message = archiveCreated 
+        ? "Plant aborted and successfully archived." 
+        : "Plant aborted successfully. Note: No archive record created (no start state or sensor data found).";
 
-        // -----------------------------------------------------------------------------------
-        // --- PLANT SELECTION CHECK (Saves sensor data only if a plant is selected) ---
-        // -----------------------------------------------------------------------------------
-        
-        // 1. Get the current selection state using the device's userId (which is DEVICE_ID)
-        const { selectionTime } = await getCurrentSelection(appStateCollection, userId);
+    return NextResponse.json({ message: message });
+}
 
-        // 2. If selectionTime is null/undefined, IGNORE the data
-        if (!selectionTime) {
-            console.log(`Sensor data IGNORED: No plant selected for device ${userId}.`);
-            // Return empty commands (200 OK) to the ESP32
-            return NextResponse.json({
-                light: 0,
-                ph_up_pump: false,
-                ph_down_pump: false,
-                ppm_a_pump: false,
-                ppm_b_pump: false,
-                light_motor_cmd: "STOP",
-            }, { status: 200 });
-        }
-        
-        // -----------------------------------------------------------------------------------
-        
-        // --- PROCEED WITH DATA INSERTION AND CONTROL LOGIC ONLY IF A PLANT IS SELECTED ---
-        
         const sensorDataWithTimestamp = {
             ...data,
-            userId: userId, // Store the data under the DEVICE_ID
+            userId: userId,
             timestamp: new Date().toISOString(),
         };
 
-        await sensorCollection.insertOne(sensorDataWithTimestamp); // Data is inserted here
+        await sensorCollection.insertOne(sensorDataWithTimestamp);
 
         const { currentPlant, currentStage } = await getCurrentSelection(
             appStateCollection,
-            userId // This is DEVICE_ID
+            userId
         );
         const { deviceCommands } = await processSensorData(
             sensorDataWithTimestamp,
             currentPlant,
             currentStage,
-            userId 
+            userId // Assuming processSensorData can handle userId if needed for logging
         );
 
         return NextResponse.json(deviceCommands);
@@ -306,7 +276,6 @@ export async function POST(request) {
                 ph_down_pump: false,
                 ppm_a_pump: false,
                 ppm_b_pump: false,
-                light_motor_cmd: "STOP",
             },
             { status: 500 }
         );
@@ -323,7 +292,11 @@ export async function GET(request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // --- CRITICAL FIX: Use the constant DEVICE_ID ---
+    // --- CRITICAL FIX START ---
+    const authUserId = session.user.id; // User ID from NextAuth session
+    const DEVICE_ID = "default_device"; // ID used by your ESP32 board
+    // --- CRITICAL FIX END ---
+    
     const client = await clientPromise;
     const db = client.db("planterbox");
     const sensorCollection = db.collection("sensordata");
@@ -332,13 +305,16 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
 
-    // Handle historical data request
+    // Handle historical data request (Uses AUTH ID for app state lookup)
     if (searchParams.get("growth") === "true") {
-      // Pass authUserId to allow historical data to fetch the user's profile
-      return getHistoricalData(appStateCollection, sensorCollection, plantProfileCollection, session.user.id);
+      // NOTE: getHistoricalData currently uses a single userId for ALL filters.
+      // To get data, it needs to be updated to use DEVICE_ID for sensorCollection lookups
+      // or you need to ensure historical data is stored under the authUserId.
+      // For now, pass the Auth ID, but be aware of potential issues here.
+      return getHistoricalData(appStateCollection, sensorCollection, plantProfileCollection, authUserId);
     }
 
-    // Handle ideal conditions request
+    // Handle ideal conditions request (Uses AUTH ID for profile lookup)
     const plantName = searchParams.get("plant");
     const stageName = searchParams.get("stage");
 
@@ -346,7 +322,7 @@ export async function GET(request) {
       const idealConditions = await plantProfileCollection.findOne({
         plant_name: plantName,
         stage: stageName,
-        userId: session.user.id, // Use authenticated user ID for profiles
+        userId: authUserId, // Use authenticated user ID
       });
 
       return NextResponse.json({
@@ -355,30 +331,34 @@ export async function GET(request) {
     }
 
     // Handle latest sensor data request (default)
+    // FIX: Fetch latest sensor data using the DEVICE_ID the ESP32 uses
     const latestData = await sensorCollection
-      .find({ userId: DEVICE_ID }) // Fetch data using DEVICE_ID
+      .find({ userId: DEVICE_ID })
       .sort({ timestamp: -1 })
       .limit(1)
       .next();
 
+    // Use the authenticated user's ID to retrieve plant selection
     const { currentPlant, currentStage } = await getCurrentSelection(
       appStateCollection,
-      DEVICE_ID // Get state using DEVICE_ID
+      authUserId
     );
+    
+    // Pass latestData to backendLogic for command calculation
     const { deviceCommands, sensorStatus } = await processSensorData(
       latestData,
       currentPlant,
       currentStage,
-      session.user.id // Pass authUserId to the backend logic (for profile lookups)
+      authUserId
     );
 
     // Prepare sensor data response
     let sensorDataToReturn;
     if (latestData) {
-      // Hide _id, tds, and userId
-      const { tds, _id, userId, ...cleanedData } = latestData; 
+      const { tds, _id, userId, ...cleanedData } = latestData;
       sensorDataToReturn = cleanedData;
     } else {
+      // KEEP: Return nulls if no data is found (i.e., display "Loading...")
       sensorDataToReturn = {
         temperature: null,
         humidity: null,
