@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Modal, Form, Input, InputNumber, Select, Button, message, Alert } from 'antd';
+import { Modal, Form, Input, InputNumber, Select, Button, message } from 'antd';
 import { useRouter } from 'next/navigation';
 
 const STAGES = ['seedling', 'vegetative', 'flowering', 'fruiting'];
@@ -9,7 +9,6 @@ const STAGES = ['seedling', 'vegetative', 'flowering', 'fruiting'];
 export default function AddPlantModal({ open, onClose, onSuccess }) {
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
-  const [submitErr, setSubmitErr] = useState(null);
   const router = useRouter();
 
   // Cross-field range validator (min ≤ max)
@@ -18,7 +17,10 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
       const min = form.getFieldValue(minField);
       const max = form.getFieldValue(maxField);
       if (min == null || max == null) return Promise.resolve();
-      if (typeof min !== 'number' || typeof max !== 'number' || Number.isNaN(min) || Number.isNaN(max)) {
+      if (
+        typeof min !== 'number' || typeof max !== 'number' ||
+        Number.isNaN(min) || Number.isNaN(max)
+      ) {
         return Promise.reject(new Error(`${label}: enter valid numbers.`));
       }
       if (min > max) return Promise.reject(new Error(`${label}: min must be ≤ max.`));
@@ -27,37 +29,34 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
   });
 
   const hardClose = () => {
-    // fully reset local state so no banner lingers
-    setSubmitErr(null);
     form.resetFields();
-    // Close if parent provided a handler
     onClose?.();
   };
 
   const onFinish = async (values) => {
-    setSubmitErr(null); // clear any old banner
+    if (submitting) return;
+    setSubmitting(true);
     try {
-      setSubmitting(true);
-
-      const toNum = (v) => (typeof v === 'number' ? v : Number(v));
+      // Coerce & build payload
+      const n = (v) => (typeof v === 'number' ? v : Number(v));
       const payload = {
         plant_name: String(values.plant_name || '').trim(),
         stage: String(values.stage || '').trim(),
         ideal_conditions: {
-          temp_min: toNum(values.temp_min),
-          temp_max: toNum(values.temp_max),
-          humidity_min: toNum(values.humidity_min),
-          humidity_max: toNum(values.humidity_max),
-          ph_min: toNum(values.ph_min),
-          ph_max: toNum(values.ph_max),
-          ppm_min: toNum(values.ppm_min),
-          ppm_max: toNum(values.ppm_max),
-          // HOURS/DAY — backend interprets this as hours per day
-          light_pwm_cycle: toNum(values.light_pwm_cycle),
+          temp_min: n(values.temp_min),
+          temp_max: n(values.temp_max),
+          humidity_min: n(values.humidity_min),
+          humidity_max: n(values.humidity_max),
+          ph_min: n(values.ph_min),
+          ph_max: n(values.ph_max),
+          ppm_min: n(values.ppm_min),
+          ppm_max: n(values.ppm_max),
+          // HOURS PER DAY (0–24)
+          light_pwm_cycle: n(values.light_pwm_cycle),
         },
       };
 
-      // Final NaN/empty guard with specific field names
+      // Final guards
       if (!payload.plant_name) throw new Error('Plant name is required.');
       if (!payload.stage) throw new Error('Stage is required.');
       for (const [k, v] of Object.entries(payload.ideal_conditions)) {
@@ -66,43 +65,38 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
         }
       }
 
+      // Helpful debug (check console if anything odd)
+      console.log('[AddPlantModal] payload →', payload);
+
       const res = await fetch('/api/plants', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      // Show server text (401/400) directly if not OK
+      const text = await res.text();
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `Create failed (${res.status})`);
+        console.error('[AddPlantModal] server error:', res.status, text);
+        message.error(text || `Create failed (${res.status})`);
+        return;
       }
 
       // Success
-      await res.json(); // not used, but await for consistency
-      message.destroy(); // clear any prior antd messages
+      console.log('[AddPlantModal] server OK:', text);
       message.success('Plant profile created.');
-
-      // tell parent (optional)
       onSuccess?.({ ok: true });
 
-      // Close the modal locally so banner can't linger
+      // Close the modal and navigate regardless of parent handlers
       hardClose();
-
-      // Navigate to dashboard no matter what (ensures UX continues)
       router.push('/dashboard');
+      router.refresh?.();
 
     } catch (err) {
-      console.error('AddPlantModal create error:', err);
-      setSubmitErr(err.message || 'Please fill in all required fields or check custom values.');
+      console.error('[AddPlantModal] submit error:', err);
+      message.error(err?.message || 'Please fill in all required fields or check custom values.');
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const onFinishFailed = ({ errorFields }) => {
-    setSubmitErr('Please correct the highlighted fields.');
-    if (errorFields?.length) form.scrollToField(errorFields[0].name);
   };
 
   return (
@@ -113,15 +107,10 @@ export default function AddPlantModal({ open, onClose, onSuccess }) {
       footer={null}
       destroyOnClose
     >
-      {submitErr ? (
-        <Alert type="error" message={submitErr} style={{ marginBottom: 12 }} />
-      ) : null}
-
       <Form
         form={form}
         layout="vertical"
         onFinish={onFinish}
-        onFinishFailed={onFinishFailed}
         validateTrigger={['onChange', 'onBlur']}
       >
         <Form.Item
