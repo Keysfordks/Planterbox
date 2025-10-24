@@ -1,66 +1,110 @@
-import { NextResponse } from 'next/server';
-import { ObjectId } from 'mongodb';
-import clientPromise from '../../../lib/mongodb';
-import { auth } from '../auth/[...nextauth]/route';
+import { NextResponse } from "next/server";
+import clientPromise from "../../../lib/mongodb";
+import { auth } from "../auth/[...nextauth]/route";
+import { ObjectId } from "mongodb";
 
+/**
+ * GET /api/archives
+ * - List user's archives (no query param)
+ * - Read single archive: ?id=<archiveId>
+ */
 export async function GET(request) {
   try {
-    const session = await auth();
+    const session = await auth().catch(() => null);
     if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
+    const id = searchParams.get("id") || null;
 
     const client = await clientPromise;
-    const db = client.db('planterbox');
-    const col = db.collection('archives');
+    const db = client.db("planterbox");
+    const col = db.collection("archives");
 
     if (id) {
-      const doc = await col.findOne({ _id: new ObjectId(id), userId: session.user.id });
-      if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-      return NextResponse.json({ archive: doc }, { status: 200 });
+      // single archive
+      const archive = await col.findOne({
+        _id: new ObjectId(id),
+        userId: session.user.id,
+      });
+      if (!archive) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      return NextResponse.json({ archive }, { status: 200 });
     }
 
-    // List most recent first, light payload for cards
-    const list = await col.find({ userId: session.user.id })
+    // list archives (most recent first). Project a minimal shape for cards.
+    const archives = await col
+      .find({ userId: session.user.id })
       .project({
-        plantName: 1, finalStage: 1, startDate: 1, endDate: 1,
-        stats: 1, snapshots: { $cond: [{ $gt: ["$snapshots", null] }, true, false] }
+        plantName: 1,
+        finalStage: 1,
+        startDate: 1,
+        endDate: 1,
+        stats: 1,
+        // Uncomment to include a cover in the list view:
+        // "snapshots.temperature": 1,
       })
       .sort({ endDate: -1 })
       .toArray();
 
-    return NextResponse.json({ archives: list }, { status: 200 });
-  } catch (e) {
-    console.error('GET /api/archives error:', e);
-    return NextResponse.json({ error: 'Failed to fetch archives' }, { status: 500 });
+    return NextResponse.json({ archives }, { status: 200 });
+  } catch (err) {
+    console.error("GET /api/archives error:", err);
+    return NextResponse.json({ error: "Server error" }, { status: 200 });
   }
 }
 
+/**
+ * DELETE /api/archives
+ * - Delete a single archive: ?id=<archiveId>
+ * - Optional bulk delete (dangerous): ?all=true
+ *   (only if you want to expose it; it deletes all user's archives)
+ *
+ * This only deletes the archive document(s). Your sensordata is already cleared on abort.
+ * If in future you store external files (e.g., GridFS), delete them here too.
+ */
 export async function DELETE(request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const userId = session.user.id;
-    const client = await clientPromise;
-    const db = client.db("planterbox");
-    const archives = db.collection("archives");
+    const session = await auth().catch(() => null);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
     const { searchParams } = new URL(request.url);
-    const projectId = searchParams.get("projectId");
-    if (!projectId) return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
+    const id = searchParams.get("id");
+    const all = searchParams.get("all") === "true";
 
-    const _id = new ObjectId(projectId);
+    const client = await clientPromise;
+    const db = client.db("planterbox");
+    const col = db.collection("archives");
 
-    const res = await archives.deleteOne({ _id, userId });
-    if (res.deletedCount === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (all) {
+      const result = await col.deleteMany({ userId: session.user.id });
+      return NextResponse.json({ ok: true, deletedCount: result.deletedCount }, { status: 200 });
+    }
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    if (!id) {
+      return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    }
+
+    let _id;
+    try {
+      _id = new ObjectId(id);
+    } catch {
+      return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+    }
+
+    const result = await col.deleteOne({ _id, userId: session.user.id });
+
+    if (result.deletedCount === 0) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true, deletedCount: 1 }, { status: 200 });
   } catch (err) {
     console.error("DELETE /api/archives error:", err);
-    return NextResponse.json({ error: "Failed to delete archive" }, { status: 500 });
+    return NextResponse.json({ error: "Server error" }, { status: 200 });
   }
 }

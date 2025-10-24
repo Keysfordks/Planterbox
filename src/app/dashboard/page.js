@@ -526,7 +526,7 @@ export default function DashboardPage() {
         } Stage`
       : "Plant Dashboard";
 
-  const { _id, timestamp, pump, light, tds, distance, ...sensors } = sensorData;
+  const { _id, timestamp, pump, light, tds, distance, ...sensors } = sensorData || {};
   const { light_pwm_cycle, ...idealRanges } = idealConditions || {};
 
   return (
