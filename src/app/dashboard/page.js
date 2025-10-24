@@ -470,7 +470,7 @@ export default function DashboardPage() {
                 </Col>
               </Row>
 
-              <Title level={5}>Light PWM Cycle (%)</Title>
+              <Title level={5}>Light PWM Cycle (Hrs/Day)</Title>
               {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
               <Form.Item 
                 name="light_pwm_cycle"
