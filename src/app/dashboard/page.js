@@ -613,87 +613,95 @@ export default function DashboardPage() {
               <p className={styles.lastUpdated}>Last updated: {lastUpdated}</p>
 
               {/* Sensor Cards */}
-              <div className={styles.sensorGrid}>
-                {Object.keys(sensors).map((key) => {
-                  const value = sensors[key];
-                  const status = sensorStatus[key] || "Loading...";
+<div className={styles.sensorGrid}>
+  {Object.keys(sensors)
+    // Hide backend/internal fields
+    .filter(
+      (key) =>
+        ![
+          "userId",
+          "default_device",
+          "deviceId",
+          "_id",
+          "__v",
+          "timestamp",
+          "idealRanges",
+        ].includes(key)
+    )
+    .map((key) => {
+      const value = sensors[key];
+      const status = sensorStatus[key] || "Loading...";
 
-                  let statusClass = styles.ideal;
-                  let valueDisplay;
+      let statusClass = styles.ideal;
+      let valueDisplay;
 
-                  if (key === "water_sufficient") {
-                    valueDisplay = value ? "IDEAL" : "TOO LOW";
-                    statusClass = value ? styles.ideal : styles.warning;
-                  } else if (key === "ppm" && status === "DILUTE_WATER") {
-                    valueDisplay = value != null ? parseFloat(value).toFixed(2) : "Loading...";
-                    statusClass = styles.dilute;
-                  } else {
-                    valueDisplay =
-                      value != null
-                        ? typeof value === "number"
-                          ? parseFloat(value).toFixed(2)
-                          : value
-                        : "Loading...";
-                    statusClass = status === "IDEAL" ? styles.ideal : styles.warning;
-                  }
+      if (key === "water_sufficient") {
+        valueDisplay = value ? "IDEAL" : "TOO LOW";
+        statusClass = value ? styles.ideal : styles.warning;
+      } else if (key === "ppm" && status === "DILUTE_WATER") {
+        valueDisplay =
+          value != null ? parseFloat(value).toFixed(2) : "Loading...";
+        statusClass = styles.dilute;
+      } else {
+        valueDisplay =
+          value != null
+            ? typeof value === "number"
+              ? parseFloat(value).toFixed(2)
+              : value
+            : "Loading...";
+        statusClass = status === "IDEAL" ? styles.ideal : styles.warning;
+      }
 
-                  return (
-                    <div key={key} className={styles.sensorCardWrapper}>
-                      <div className={styles.sensorCard}>
-                        <div className={styles.sensorName}>{sensorNames[key] || key}</div>
+      // Only show Ideal text if valid values exist
+      const idealText =
+        idealRanges &&
+        ((key === "temperature" &&
+          idealRanges.temp_min != null &&
+          idealRanges.temp_max != null &&
+          `Ideal: ${idealRanges.temp_min}°C – ${idealRanges.temp_max}°C`) ||
+          (key === "humidity" &&
+            idealRanges.humidity_min != null &&
+            idealRanges.humidity_max != null &&
+            `Ideal: ${idealRanges.humidity_min}% – ${idealRanges.humidity_max}%`) ||
+          (key === "ph" &&
+            idealRanges.ph_min != null &&
+            idealRanges.ph_max != null &&
+            `Ideal: ${idealRanges.ph_min} – ${idealRanges.ph_max}`) ||
+          (key === "ppm" &&
+            idealRanges.ppm_min != null &&
+            idealRanges.ppm_max != null &&
+            `Ideal: ${idealRanges.ppm_min} – ${idealRanges.ppm_max}`));
 
-                        <div className={`${styles.sensorValue} ${statusClass}`}>{valueDisplay}</div>
+      return (
+        <div key={key} className={styles.sensorCardWrapper}>
+          <div className={styles.sensorCard}>
+            <div className={styles.sensorName}>
+              {sensorNames[key] || key}
+            </div>
 
-                        {idealRanges && (
-  <>
-    {key === "temperature" &&
-      idealRanges.temp_min != null &&
-      idealRanges.temp_max != null && (
-        <div className={styles.idealRange}>
-          Ideal: {idealRanges.temp_min}°C – {idealRanges.temp_max}°C
+            <div className={`${styles.sensorValue} ${statusClass}`}>
+              {valueDisplay}
+            </div>
+
+            {/* Only show Ideal when valid */}
+            {idealText && (
+              <div className={styles.idealRange}>{idealText}</div>
+            )}
+          </div>
+
+          {/* PPM dilution warning */}
+          {key === "ppm" && status === "DILUTE_WATER" && (
+            <div className={styles.ppmWarning}>
+              <p className={styles.ppmWarningText}>
+                PPM TOO HIGH: Manual dilution required. Please add
+                distilled water to lower nutrient concentration.
+              </p>
+            </div>
+          )}
         </div>
-      )}
-    {key === "humidity" &&
-      idealRanges.humidity_min != null &&
-      idealRanges.humidity_max != null && (
-        <div className={styles.idealRange}>
-          Ideal: {idealRanges.humidity_min}% – {idealRanges.humidity_max}%
-        </div>
-      )}
-    {key === "ph" &&
-      idealRanges.ph_min != null &&
-      idealRanges.ph_max != null && (
-        <div className={styles.idealRange}>
-          Ideal: {idealRanges.ph_min} – {idealRanges.ph_max}
-        </div>
-      )}
-    {key === "ppm" &&
-      idealRanges.ppm_min != null &&
-      idealRanges.ppm_max != null && (
-        <div className={styles.idealRange}>
-          Ideal: {idealRanges.ppm_min} – {idealRanges.ppm_max}
-        </div>
-      )}
-  </>
-)}
-
-                      </div>
-
-                      {/* PPM dilution warning */}
-                      {key === "ppm" && status === "DILUTE_WATER" && (
-                        <div className={styles.ppmWarning}>
-                          <FaExclamationTriangle className={styles.ppmWarningIcon} />
-                          <p className={styles.ppmWarningText}>
-                            PPM TOO HIGH: Manual dilution required. Please add distilled water to lower nutrient
-                            concentration.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
+      );
+    })}
+</div>
               {/* Abort */}
               <div className={styles.abortSection}>
                 <Button danger size="large" onClick={handleAbortPlant} style={{ fontWeight: "bold" }}>
