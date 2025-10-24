@@ -48,8 +48,6 @@ export default function PastGrowsGrid() {
     }
   };
 
-  const gridCols = useMemo(() => ({ xs: 1, sm: 2, md: 2, lg: 3, xl: 4, xxl: 4 }), []);
-
   return (
     <div style={{ padding: 0 }}>
       <Space align="center" style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -66,11 +64,15 @@ export default function PastGrowsGrid() {
 
       {loading ? (
         <Row gutter={[16, 16]}>
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Col key={i} xs={24} sm={12} md={12} lg={8} xl={6}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Col key={i} xs={24} lg={12}>
               <Card style={{ borderRadius: 14 }}>
-                <Skeleton.Image style={{ width: '100%', height: 160, marginBottom: 12, borderRadius: 10 }} />
-                <Skeleton active paragraph={{ rows: 2 }} />
+                <div style={{ display: 'flex', gap: 16 }}>
+                  <Skeleton.Image style={{ width: 220, height: 140, borderRadius: 10 }} />
+                  <div style={{ flex: 1 }}>
+                    <Skeleton active paragraph={{ rows: 3 }} />
+                  </div>
+                </div>
               </Card>
             </Col>
           ))}
@@ -88,8 +90,8 @@ export default function PastGrowsGrid() {
       ) : (
         <Row gutter={[16, 16]}>
           {items.map((it) => (
-            <Col key={it._id} {...gridCols}>
-              <ArchiveCard item={it} onOpen={() => onOpenDetails(it._id)} />
+            <Col key={it._id} xs={24} lg={12}>
+              <ArchiveCardHorizontal item={it} onOpen={() => onOpenDetails(it._id)} />
             </Col>
           ))}
         </Row>
@@ -100,55 +102,75 @@ export default function PastGrowsGrid() {
   );
 }
 
-/* ---------- Card ---------- */
+/* ---------- HORIZONTAL CARD ---------- */
 
-function ArchiveCard({ item, onOpen }) {
+function ArchiveCardHorizontal({ item, onOpen }) {
   const start = toDate(item?.startDate);
   const end = toDate(item?.endDate);
   const stage = (item?.finalStage || '—').toLowerCase();
   const name = niceName(item?.plantName || 'Unknown Plant');
-
   const stats = item?.stats;
+
+  // If you projected a temperature snapshot in the list API, show it as cover:
+  // const cover = item?.snapshots?.temperature;
+  const cover = null;
 
   return (
     <Card
       hoverable
       onClick={onOpen}
-      style={{ borderRadius: 14, overflow: 'hidden' }}
-      cover={
-        <div style={{ position: 'relative', height: 100, background: '#f8fafc' }}>
-          {/* Cover image (if we later include a thumbnail in list API, swap this src) */}
-          <CoverPlaceholder initials={initials(name)} />
+      style={{ borderRadius: 14 }}
+      bodyStyle={{ padding: 14 }}
+    >
+      <div style={{
+        display: 'flex',
+        gap: 16,
+        alignItems: 'stretch'
+      }}>
+        {/* LEFT: thumbnail */}
+        <div style={{ width: 220, minWidth: 220, position: 'relative' }}>
+          {cover ? (
+            <img
+              src={cover}
+              alt="Snapshot"
+              style={{ width: '100%', height: 140, objectFit: 'cover', borderRadius: 10, border: '1px solid #eee' }}
+            />
+          ) : (
+            <CoverPlaceholder />
+          )}
 
-          {/* Stage tag overlay */}
-          <div style={{ width: 220, minWidth: 220, position: 'relative' }}>
+          {/* Stage chip */}
+          <div style={{ position: 'absolute', top: 8, right: 8 }}>
             <Tag color="blue" style={{ borderRadius: 999 }}>{stage}</Tag>
           </div>
         </div>
-      }
-      bodyStyle={{ padding: 12 }}
-    >
-      <Space direction="vertical" size={8} style={{ width: '100%' }}>
-        <Text style={{ fontWeight: 600, fontSize: 16 }}>{name}</Text>
 
-        <Space size={6} style={{ color: '#6b7280' }}>
-          <CalendarOutlined />
-          <span>{fmtDate(start)} — {fmtDate(end)}</span>
-        </Space>
+        {/* RIGHT: details */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+            <Text style={{ fontWeight: 600, fontSize: 16, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {name}
+            </Text>
+            <Space size={6} style={{ color: '#6b7280', whiteSpace: 'nowrap' }}>
+              <CalendarOutlined />
+              <span>{fmtDate(start)} — {fmtDate(end)}</span>
+            </Space>
+          </div>
 
-        <Divider style={{ margin: '8px 0' }} />
+          <Divider style={{ margin: '8px 0' }} />
 
-        {stats ? (
-          <Row gutter={8}>
-            <Col span={12}><MiniStat title="Temp avg" value={fmt(stats.temperature?.avg, '°C')} /></Col>
-            <Col span={12}><MiniStat title="Humidity avg" value={fmt(stats.humidity?.avg, '%')} /></Col>
-            <Col span={12}><MiniStat title="pH avg" value={fmt(stats.ph?.avg, '')} /></Col>
-            <Col span={12}><MiniStat title="PPM avg" value={fmt(stats.ppm?.avg, '')} /></Col>
-          </Row>
-        ) : (
-          <Text type="secondary" style={{ fontSize: 12 }}>No stats computed</Text>
-        )}
-      </Space>
+          {stats ? (
+            <Row gutter={[8, 8]}>
+              <Col xs={12} md={6}><MiniStat title="Temp avg" value={fmt(stats.temperature?.avg, '°C')} /></Col>
+              <Col xs={12} md={6}><MiniStat title="Humidity avg" value={fmt(stats.humidity?.avg, '%')} /></Col>
+              <Col xs={12} md={6}><MiniStat title="pH avg" value={fmt(stats.ph?.avg, '')} /></Col>
+              <Col xs={12} md={6}><MiniStat title="PPM avg" value={fmt(stats.ppm?.avg, '')} /></Col>
+            </Row>
+          ) : (
+            <Text type="secondary" style={{ fontSize: 12 }}>No stats computed</Text>
+          )}
+        </div>
+      </div>
     </Card>
   );
 }
@@ -168,7 +190,7 @@ function MiniStat({ title, value }) {
   );
 }
 
-/* ---------- Details Modal ---------- */
+/* ---------- DETAILS MODAL (unchanged) ---------- */
 
 function ArchiveDetailsModal({ archive, onClose }) {
   const open = Boolean(archive);
@@ -244,7 +266,7 @@ function StatBlock({ title, stat, fmtUnit }) {
   );
 }
 
-/* ---------- Small helpers ---------- */
+/* ---------- helpers ---------- */
 
 function fmt(v, unit) {
   if (v == null || Number.isNaN(v)) return '—';
@@ -252,50 +274,32 @@ function fmt(v, unit) {
   const s = Number.isInteger(n) ? String(n) : n.toFixed(2);
   return unit ? `${s} ${unit}` : s;
 }
+function toDate(d) { try { return d ? new Date(d) : null; } catch { return null; } }
+function fmtDate(d) { return d ? d.toLocaleDateString() : '—'; }
+function fmtDateTime(d) { return d ? d.toLocaleString() : '—'; }
+function niceName(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
 
-function toDate(d) {
-  try { return d ? new Date(d) : null; } catch { return null; }
-}
-function fmtDate(d) {
-  return d ? d.toLocaleDateString() : '—';
-}
-function fmtDateTime(d) {
-  return d ? d.toLocaleString() : '—';
-}
-function niceName(s) {
-  if (!s) return '';
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-function initials(name) {
-  const parts = String(name).trim().split(/\s+/);
-  return (parts[0]?.[0] || '').toUpperCase() + (parts[1]?.[0] || '').toUpperCase();
-}
-
-function CoverPlaceholder({ initials }) {
-  // soft gradient with centered initials/icon
+function CoverPlaceholder() {
   return (
     <div
       style={{
-        height: '100%',
         width: '100%',
+        height: 140,
         display: 'grid',
         placeItems: 'center',
-        background:
-          'linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(59,130,246,0.15) 100%)'
+        background: 'linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(59,130,246,0.15) 100%)',
+        borderRadius: 10,
+        border: '1px solid #eee'
       }}
     >
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
           padding: '6px 10px',
           background: 'rgba(255,255,255,0.75)',
           border: '1px solid rgba(0,0,0,0.06)',
           borderRadius: 999
         }}
       >
-        <LineChartOutlined />
         <Text type="secondary" style={{ fontSize: 12 }}>Click to view snapshots</Text>
       </div>
     </div>
