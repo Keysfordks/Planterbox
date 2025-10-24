@@ -1,61 +1,41 @@
-import { NextResponse } from "next/server";
-import clientPromise from "../../../lib/mongodb";
-import { auth } from "../auth/[...nextauth]/route";
-import { ObjectId } from "mongodb";
+import { NextResponse } from 'next/server';
+import { ObjectId } from 'mongodb';
+import clientPromise from '../../../lib/mongodb';
+import { auth } from '../auth/[...nextauth]/route';
 
 export async function GET(request) {
   try {
     const session = await auth();
-    if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const userId = session.user.id;
-    const client = await clientPromise;
-    const db = client.db("planterbox");
-    const archives = db.collection("archives");
-    const profiles = db.collection("plant_profiles");
-
-    const { searchParams } = new URL(request.url);
-    const projectId = searchParams.get("projectId");
-    const detail = searchParams.get("detail") === "true";
-
-    if (projectId) {
-      let _id = null;
-      try { _id = new ObjectId(projectId); } catch {}
-      const project = _id ? await archives.findOne({ _id, userId }) : null;
-
-      if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-      if (!detail) {
-        return NextResponse.json({ project }, { status: 200 });
-      }
-
-      // Optionally fetch ideal conditions for the plant at final stage
-      const profile = await profiles.findOne(
-        {
-          plant_name: project.plantName,
-          stage: project.finalStage,
-          $or: [{ userId }, { userId: { $exists: false } }]
-        },
-        { sort: { userId: -1 } }
-      );
-
-      return NextResponse.json({
-        project,
-        idealConditions: profile?.ideal_conditions ?? null
-      }, { status: 200 });
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // List all projects
-    const list = await archives
-      .find({ userId })
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    const client = await clientPromise;
+    const db = client.db('planterbox');
+    const col = db.collection('archives');
+
+    if (id) {
+      const doc = await col.findOne({ _id: new ObjectId(id), userId: session.user.id });
+      if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      return NextResponse.json({ archive: doc }, { status: 200 });
+    }
+
+    // List most recent first, light payload for cards
+    const list = await col.find({ userId: session.user.id })
+      .project({
+        plantName: 1, finalStage: 1, startDate: 1, endDate: 1,
+        stats: 1, snapshots: { $cond: [{ $gt: ["$snapshots", null] }, true, false] }
+      })
       .sort({ endDate: -1 })
-      .project({ plantName: 1, finalStage: 1, startDate: 1, endDate: 1 })
       .toArray();
 
-    return NextResponse.json({ projects: list }, { status: 200 });
-  } catch (err) {
-    console.error("GET /api/archives error:", err);
-    return NextResponse.json({ error: "Failed to fetch archives" }, { status: 500 });
+    return NextResponse.json({ archives: list }, { status: 200 });
+  } catch (e) {
+    console.error('GET /api/archives error:', e);
+    return NextResponse.json({ error: 'Failed to fetch archives' }, { status: 500 });
   }
 }
 
