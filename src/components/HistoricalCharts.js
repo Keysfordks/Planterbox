@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -31,45 +31,80 @@ ChartJS.register(
 );
 
 export default function HistoricalCharts({ show }) {
-  const [loading, setLoading] = useState(false);
-  const [payload, setPayload] = useState(null);
+  // We separate "initial skeleton" from "background updating"
+  const [payload, setPayload] = useState(null);     // last good data
   const [error, setError] = useState(null);
+  const [isFetching, setIsFetching] = useState(false); // background fetch state
+  const hasLoadedOnceRef = useRef(false);
+  const abortRef = useRef(null);
 
   async function loadGrowth() {
-    try {
-      setLoading(true);
+    // Cancel any in-flight request to avoid race conditions / flicker
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    // For the very first load, show skeleton; thereafter, keep the graph visible
+    if (!hasLoadedOnceRef.current) {
       setError(null);
-      const res = await fetch('/api/sensordata?growth=true', { cache: 'no-store' });
+    }
+    setIsFetching(true);
+
+    try {
+      const res = await fetch('/api/sensordata?growth=true', {
+        // keep no-store if you truly need the latest every time;
+        // the "keep previous data" UX is handled in our state logic
+        cache: 'no-store',
+        signal: controller.signal,
+      });
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`Growth fetch failed (${res.status}): ${text.slice(0, 180)}`);
       }
       const json = await res.json();
-      setPayload({
+
+      const nextPayload = {
         historicalData: Array.isArray(json?.historicalData) ? json.historicalData : [],
         idealConditions: json?.idealConditions ?? null,
         selectionStartTime: json?.selectionStartTime ?? null,
-      });
+      };
+
+      setPayload(nextPayload);
+      setError(null);
+      hasLoadedOnceRef.current = true;
     } catch (e) {
+      if (e?.name === 'AbortError') return; // ignore cancellations
       console.error('HistoricalCharts load error:', e);
       setError(e.message || 'Failed to load historical data');
-      setPayload({
-        historicalData: [],
-        idealConditions: null,
-        selectionStartTime: null,
-      });
+
+      // Keep prior payload so chart remains visible; only seed an empty payload
+      // if we've never had data before.
+      if (!hasLoadedOnceRef.current) {
+        setPayload({
+          historicalData: [],
+          idealConditions: null,
+          selectionStartTime: null,
+        });
+      }
     } finally {
-      setLoading(false);
+      setIsFetching(false);
     }
   }
 
   useEffect(() => {
-    if (show) loadGrowth();
-  }, [show]);
+    if (!show) return;
+    loadGrowth();
+
+    // Optional: clean up on unmount
+    return () => {
+      if (abortRef.current) abortRef.current.abort();
+    };
+  }, [show]); // only when dialog/panel becomes visible
 
   const rows = payload?.historicalData ?? [];
   const ideals = payload?.idealConditions ?? null;
   const hasData = rows.length > 0;
+  const isInitialLoading = !hasLoadedOnceRef.current;
 
   const timeUnit = useMemo(() => {
     if (!hasData) return 'hour';
@@ -82,11 +117,19 @@ export default function HistoricalCharts({ show }) {
   }, [rows, hasData]);
 
   return (
-    <div style={{ padding: 16 }}>
-      {loading && <div>Loading historical data…</div>}
-      {!loading && error && <div style={{ color: 'crimson', marginBottom: 12 }}>{error}</div>}
+    <div style={{ padding: 16, position: 'relative' }}>
+      {/* Initial skeleton ONLY the first time */}
+      {isInitialLoading && (
+        <div className="h-48" style={{ height: 208, borderRadius: 10, background: '#e5e7eb', animation: 'pulse 1.5s ease-in-out infinite' }} />
+      )}
 
-      {!loading && !hasData && (
+      {/* Error banner (non-blocking; we keep the old chart if we have one) */}
+      {error && !isInitialLoading && (
+        <div style={{ color: 'crimson', marginBottom: 12 }}>{error}</div>
+      )}
+
+      {/* Empty state (only when we have no data after first load) */}
+      {!isInitialLoading && !hasData && (
         <div style={{ lineHeight: 1.6 }}>
           <div style={{ fontWeight: 600, marginBottom: 4 }}>No Historical Data Found</div>
           <div>
@@ -97,7 +140,8 @@ export default function HistoricalCharts({ show }) {
         </div>
       )}
 
-      {!loading && hasData && (
+      {/* Charts (stay mounted during background fetches) */}
+      {!isInitialLoading && hasData && (
         <div style={{ display: 'grid', gap: 24 }}>
           <MetricChart
             title="Temperature (°C)"
@@ -135,6 +179,22 @@ export default function HistoricalCharts({ show }) {
             idealMax={ideals?.ph_max ?? null}
             timeUnit={timeUnit}
           />
+
+          {/* Tiny non-blocking badge during background updates */}
+          {isFetching && (
+            <div style={{
+              position: 'absolute',
+              top: 18,
+              right: 24,
+              fontSize: 12,
+              padding: '2px 8px',
+              borderRadius: 6,
+              background: '#f3f4f6',
+              border: '1px solid #e5e7eb'
+            }}>
+              updating…
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -144,15 +204,18 @@ export default function HistoricalCharts({ show }) {
 /** One chart with an ideal-range green band */
 function MetricChart({ title, unit, field, rows, idealMin, idealMax, timeUnit }) {
   // Build (x,y) points; skip nulls
-  const points = rows
-    .map(r => {
-      const y = r?.[field];
-      if (y == null || Number.isNaN(y)) return null;
-      return { x: new Date(r.timestamp), y: Number(y) };
-    })
-    .filter(Boolean);
+  const points = useMemo(() => (
+    rows
+      .map(r => {
+        const y = r?.[field];
+        if (y == null || Number.isNaN(y)) return null;
+        return { x: new Date(r.timestamp), y: Number(y) };
+      })
+      .filter(Boolean)
+  ), [rows, field]);
 
-  const data = {
+  // Memoize data/options to keep <Line> from remounting
+  const data = useMemo(() => ({
     datasets: [
       {
         label: title,
@@ -164,25 +227,30 @@ function MetricChart({ title, unit, field, rows, idealMin, idealMax, timeUnit })
         fill: false,
       }
     ]
-  };
+  }), [points, title]);
 
-  const annotations = {};
-  if (idealMin != null && idealMax != null && idealMin <= idealMax) {
-    annotations.idealBand = {
-      type: 'box',
-      yMin: idealMin,
-      yMax: idealMax,
-      backgroundColor: 'rgba(16, 185, 129, 0.18)', // translucent green
-      borderWidth: 0,
+  const annotations = useMemo(() => {
+    if (idealMin == null || idealMax == null || idealMin > idealMax) return {};
+    return {
+      idealBand: {
+        type: 'box',
+        yMin: idealMin,
+        yMax: idealMax,
+        backgroundColor: 'rgba(16, 185, 129, 0.18)', // translucent green
+        borderWidth: 0,
+      }
     };
-  }
+  }, [idealMin, idealMax]);
 
-  const options = {
+  const options = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: { display: false },
-      title: { display: true, text: `${title}${unit ? `  (Ideal: ${idealMin ?? '—'}–${idealMax ?? '—'} ${unit})` : ''}` },
+      title: {
+        display: true,
+        text: `${title}${unit ? `  (Ideal: ${idealMin ?? '—'}–${idealMax ?? '—'} ${unit})` : ''}`
+      },
       tooltip: {
         callbacks: {
           label: ctx => {
@@ -210,7 +278,7 @@ function MetricChart({ title, unit, field, rows, idealMin, idealMax, timeUnit })
     elements: {
       line: { borderJoinStyle: 'round' }
     }
-  };
+  }), [annotations, idealMin, idealMax, timeUnit, title, unit]);
 
   // Give each chart its own height
   return (
@@ -222,4 +290,15 @@ function MetricChart({ title, unit, field, rows, idealMin, idealMax, timeUnit })
       )}
     </div>
   );
+}
+
+/* tiny css keyframes for skeleton (optional) */
+const style = typeof document !== 'undefined' && document.createElement('style');
+if (style) {
+  style.innerHTML = `
+  @keyframes pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }`;
+  document.head.appendChild(style);
 }

@@ -2,15 +2,15 @@
 import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 
-// ✅ Adjust these two import paths to match your project structure
+// Adjust these paths if your structure differs
 import clientPromise from '../../../lib/mongodb';
 import { auth } from '../auth/[...nextauth]/route';
 
 /**
  * GET /api/plants
- * - ?presets=true&plant=<name>&stage=<stage> -> returns preset ideal_conditions (no userId)
- * - ?presets=true -> returns a list of seedling presets (no userId)
- * - (default, requires auth) -> returns the authenticated user's plants
+ * - ?presets=true&plant=<name>&stage=<stage> -> preset ideal_conditions (no userId)
+ * - ?presets=true -> list one "seedling" preset per plant (no userId)
+ * - (default, requires auth) -> authenticated user's plants
  */
 export async function GET(request) {
   try {
@@ -25,21 +25,18 @@ export async function GET(request) {
     const db = client.db('planterbox');
 
     if (presetsOnly) {
-      // 1) Exact preset lookup
       if (plantName && stage) {
         const preset = await db.collection('plant_profiles').findOne({
           plant_name: plantName,
           stage,
           userId: { $exists: false },
         });
-
         if (!preset) {
           return NextResponse.json({ error: 'Preset not found' }, { status: 404 });
         }
         return NextResponse.json({ ideal_conditions: preset.ideal_conditions }, { status: 200 });
       }
 
-      // 2) Otherwise list one "seedling" preset per plant_name (no userId)
       const distinctPlantNames = await db
         .collection('plant_profiles')
         .distinct('plant_name', { userId: { $exists: false } });
@@ -53,11 +50,9 @@ export async function GET(request) {
         });
         if (seedling) presets.push(seedling);
       }
-
       return NextResponse.json({ presets }, { status: 200 });
     }
 
-    // Otherwise, return the authenticated user's plants
     if (!session || !session.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -88,13 +83,13 @@ export async function GET(request) {
  *     humidity_min, humidity_max, light_pwm_cycle,
  *     ideal_light_distance_cm, light_distance_tolerance_cm
  *   },
- *   // optional:
+ *   // optional
  *   deviceId?: string
  * }
  *
  * - Inserts the plant profile (scoped to the user)
- * - Also updates app_state to set current selection for the user
- * - If deviceId provided, mirrors the same selection under that deviceId
+ * - Updates app_state to set current selection for the user
+ * - If deviceId provided, mirrors the selection under that deviceId
  */
 export async function POST(request) {
   try {
@@ -104,8 +99,6 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-
-    // Validate
     if (!body.plant_name || !body.stage || !body.ideal_conditions) {
       return NextResponse.json(
         { error: 'Missing required fields: plant_name, stage, or ideal_conditions' },
@@ -116,10 +109,8 @@ export async function POST(request) {
     const client = await clientPromise;
     const db = client.db('planterbox');
 
-    // Normalize name (optional but recommended for consistent lookups)
     const normalizedName = String(body.plant_name).toLowerCase().trim();
 
-    // Build document for plant_profiles
     const plantData = {
       ...body,
       plant_name: normalizedName,
@@ -128,10 +119,8 @@ export async function POST(request) {
       updatedAt: new Date(),
     };
 
-    // Insert into plant_profiles
     const insertResult = await db.collection('plant_profiles').insertOne(plantData);
 
-    // --- Also update app_state: set current selection for this user ---
     const appState = db.collection('app_state');
     const selectionValue = {
       plant: normalizedName,
@@ -139,14 +128,14 @@ export async function POST(request) {
       timestamp: new Date().toISOString(),
     };
 
-    // Current selection under the userId (used by dashboard, GET /api/sensordata, etc.)
+    // selection for the user
     await appState.updateOne(
       { state_name: 'plantSelection', userId: session.user.id },
       { $set: { value: selectionValue } },
       { upsert: true }
     );
 
-    // OPTIONAL: Mirror selection under a device key so device POSTs can find an exact match
+    // optional device mirror
     if (body.deviceId) {
       await appState.updateOne(
         { state_name: 'plantSelection', userId: body.deviceId },
@@ -176,7 +165,6 @@ export async function POST(request) {
 
 /**
  * DELETE /api/plants?id=<plantId>
- * - Deletes the plant document if it belongs to the authenticated user
  */
 export async function DELETE(request) {
   try {
