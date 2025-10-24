@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Card, Modal, Typography, Tag, Statistic, Row, Col, Skeleton,
-  Empty, Space, Button, Tooltip, Divider
+  Empty, Space, Button, Divider, Popconfirm, message
 } from 'antd';
 import {
-  CalendarOutlined, LineChartOutlined, ReloadOutlined
+  CalendarOutlined, LineChartOutlined, ReloadOutlined, DeleteOutlined
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -45,6 +45,23 @@ export default function PastGrowsGrid() {
       setActive(json?.archive ?? null);
     } catch (e) {
       console.error(e);
+      message.error('Failed to open archive');
+    }
+  };
+
+  const onDelete = async (id) => {
+    try {
+      const res = await fetch(`/api/archives?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const msg = await res.text().catch(() => '');
+        throw new Error(msg || `Delete failed (${res.status})`);
+      }
+      setItems((prev) => prev.filter((x) => x._id !== id)); // remove from list
+      setActive((prev) => (prev?._id === id ? null : prev)); // close modal if open
+      message.success('Archive deleted');
+    } catch (e) {
+      console.error(e);
+      message.error('Could not delete archive');
     }
   };
 
@@ -91,29 +108,42 @@ export default function PastGrowsGrid() {
         <Row gutter={[16, 16]}>
           {items.map((it) => (
             <Col key={it._id} xs={24} lg={12}>
-              <ArchiveCardHorizontal item={it} onOpen={() => onOpenDetails(it._id)} />
+              <ArchiveCardHorizontal
+                item={it}
+                onOpen={() => onOpenDetails(it._id)}
+                onDelete={onDelete}
+              />
             </Col>
           ))}
         </Row>
       )}
 
-      <ArchiveDetailsModal archive={active} onClose={() => setActive(null)} />
+      <ArchiveDetailsModal
+        archive={active}
+        onClose={() => setActive(null)}
+        onDelete={onDelete}
+      />
     </div>
   );
 }
 
-/* ---------- HORIZONTAL CARD ---------- */
+/* ---------- HORIZONTAL CARD WITH ROW-LEVEL DELETE ---------- */
 
-function ArchiveCardHorizontal({ item, onOpen }) {
+function ArchiveCardHorizontal({ item, onOpen, onDelete }) {
   const start = toDate(item?.startDate);
   const end = toDate(item?.endDate);
   const stage = (item?.finalStage || '—').toLowerCase();
   const name = niceName(item?.plantName || 'Unknown Plant');
   const stats = item?.stats;
 
-  // If you projected a temperature snapshot in the list API, show it as cover:
-  // const cover = item?.snapshots?.temperature;
+  // const cover = item?.snapshots?.temperature; // If you projected it in GET list
   const cover = null;
+
+  // stop card click when pressing delete
+  const handleDeleteClick = async (e) => {
+    e.stopPropagation();
+    // confirmed in Popconfirm
+  };
 
   return (
     <Card
@@ -122,11 +152,7 @@ function ArchiveCardHorizontal({ item, onOpen }) {
       style={{ borderRadius: 14 }}
       bodyStyle={{ padding: 14 }}
     >
-      <div style={{
-        display: 'flex',
-        gap: 16,
-        alignItems: 'stretch'
-      }}>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
         {/* LEFT: thumbnail */}
         <div style={{ width: 220, minWidth: 220, position: 'relative' }}>
           {cover ? (
@@ -151,9 +177,30 @@ function ArchiveCardHorizontal({ item, onOpen }) {
             <Text style={{ fontWeight: 600, fontSize: 16, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {name}
             </Text>
-            <Space size={6} style={{ color: '#6b7280', whiteSpace: 'nowrap' }}>
-              <CalendarOutlined />
-              <span>{fmtDate(start)} — {fmtDate(end)}</span>
+
+            <Space size={8} align="center">
+              <Space size={6} style={{ color: '#6b7280', whiteSpace: 'nowrap' }}>
+                <CalendarOutlined />
+                <span>{fmtDate(start)} — {fmtDate(end)}</span>
+              </Space>
+
+              {/* Row-level delete icon */}
+              <Popconfirm
+                title="Delete this archive?"
+                description="This will permanently delete the archived plant and its stored snapshots."
+                okText="Delete"
+                okType="danger"
+                onConfirm={() => onDelete(item._id)}
+              >
+                <Button
+                  type="text"
+                  danger
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  onClick={handleDeleteClick}
+                  aria-label="Delete archive"
+                />
+              </Popconfirm>
             </Space>
           </div>
 
@@ -190,9 +237,9 @@ function MiniStat({ title, value }) {
   );
 }
 
-/* ---------- DETAILS MODAL (unchanged) ---------- */
+/* ---------- DETAILS MODAL (also keeps Delete) ---------- */
 
-function ArchiveDetailsModal({ archive, onClose }) {
+function ArchiveDetailsModal({ archive, onClose, onDelete }) {
   const open = Boolean(archive);
   if (!open) return null;
 
@@ -208,7 +255,20 @@ function ArchiveDetailsModal({ archive, onClose }) {
       title={name}
       open={open}
       onCancel={onClose}
-      footer={<Button onClick={onClose}>Close</Button>}
+      footer={
+        <Space>
+          <Button onClick={onClose}>Close</Button>
+          <Popconfirm
+            title="Delete this archive?"
+            description="This will permanently delete the archived plant and its stored snapshots."
+            okText="Delete"
+            okType="danger"
+            onConfirm={() => onDelete(a._id)}
+          >
+            <Button danger icon={<DeleteOutlined />}>Delete</Button>
+          </Popconfirm>
+        </Space>
+      }
       width={1000}
       destroyOnClose={false}
       maskClosable={false}
