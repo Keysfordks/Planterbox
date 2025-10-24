@@ -599,10 +599,6 @@ export default function DashboardPage() {
               <p className={styles.infoLabel}>Email</p>
               <p className={styles.infoValue}>{session.user?.email || "Not provided"}</p>
             </div>
-            <div className={styles.infoItem}>
-              <p className={styles.infoLabel}>Account Id</p>
-              <p className={styles.infoValue}>{session.user.id}</p>
-            </div>
           </div>
         </Card>
 
@@ -648,21 +644,39 @@ export default function DashboardPage() {
 
                         <div className={`${styles.sensorValue} ${statusClass}`}>{valueDisplay}</div>
 
-                        <div className={styles.idealRange}>
-                          Ideal:{" "}
-                          {key === "temperature"
-                            ? `${idealRanges?.temp_min}°C – ${idealRanges?.temp_max}°C`
-                            : key === "humidity"
-                            ? `${idealRanges?.humidity_min}% – ${idealRanges?.humidity_max}%`
-                            : key === "ph"
-                            ? `${idealRanges?.ph_min} – ${idealRanges?.ph_max}`
-                            : key === "ppm"
-                            ? `${idealRanges?.ppm_min} – ${idealRanges?.ppm_max}`
-                            : key === "water_sufficient"
-                            ? "Sufficient"
-                            : "Range N/A"
-                            }
-                        </div>
+                        {idealRanges && (
+  <>
+    {key === "temperature" &&
+      idealRanges.temp_min != null &&
+      idealRanges.temp_max != null && (
+        <div className={styles.idealRange}>
+          Ideal: {idealRanges.temp_min}°C – {idealRanges.temp_max}°C
+        </div>
+      )}
+    {key === "humidity" &&
+      idealRanges.humidity_min != null &&
+      idealRanges.humidity_max != null && (
+        <div className={styles.idealRange}>
+          Ideal: {idealRanges.humidity_min}% – {idealRanges.humidity_max}%
+        </div>
+      )}
+    {key === "ph" &&
+      idealRanges.ph_min != null &&
+      idealRanges.ph_max != null && (
+        <div className={styles.idealRange}>
+          Ideal: {idealRanges.ph_min} – {idealRanges.ph_max}
+        </div>
+      )}
+    {key === "ppm" &&
+      idealRanges.ppm_min != null &&
+      idealRanges.ppm_max != null && (
+        <div className={styles.idealRange}>
+          Ideal: {idealRanges.ppm_min} – {idealRanges.ppm_max}
+        </div>
+      )}
+  </>
+)}
+
                       </div>
 
                       {/* PPM dilution warning */}
