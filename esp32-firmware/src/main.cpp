@@ -31,7 +31,7 @@ const char* API_PATH = "/api/sensordata";
 #define PH_SENSOR_PIN 39
 
 #define WATER_SENSOR_PIN 32
-const int WATER_THRESHOLD = 600;
+const int WATER_THRESHOLD = 680;
 
 #define LIGHT_PIN 15
 
