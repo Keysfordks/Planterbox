@@ -1,17 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Card, Avatar, Spin, message, Select, Button, Alert, Tooltip, Modal, Typography, Divider, Input, Form, InputNumber, Row, Col} from "antd";
+import {
+  Card, Avatar, Spin, message, Select, Button, Alert, Tooltip, Modal,
+  Typography, Divider, Input, Form, InputNumber, Row, Col
+} from "antd";
 import Navbar from "../../components/navbar";
 import styles from "../../styles/dashboard.module.css";
 import { FaInfoCircle, FaExclamationTriangle, FaLeaf } from "react-icons/fa";
 
-// Import the new HistoricalCharts component
-import HistoricalCharts from "../../components/HistoricalCharts"; 
+// Charts (exposes ref.getSnapshots())
+import HistoricalCharts from "../../components/HistoricalCharts";
+// New Past Grows grid
+import PastGrowsGrid from "../../components/PastGrowsGrid";
 
 const { Title, Text, Paragraph } = Typography;
+const { Option } = Select;
 
 const sensorNames = {
   temperature: "Temperature (°C)",
@@ -23,29 +29,25 @@ const sensorNames = {
 
 const GROWTH_STAGES = ["seedling", "vegetative", "mature"];
 
-const { Option } = Select;
-
-// The GrowthGraph component is removed, and its logic is moved to HistoricalCharts.js
-
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+
   const [selectedPlant, setSelectedPlant] = useState(null);
   const [selectedStage, setSelectedStage] = useState(null);
   const [dropdownStage, setDropdownStage] = useState("seedling");
   const [newStage, setNewStage] = useState("seedling");
+
   const [sensorData, setSensorData] = useState({});
   const [idealConditions, setIdealConditions] = useState({});
   const [sensorStatus, setSensorStatus] = useState({});
   const [lastUpdated, setLastUpdated] = useState(null);
-  
-  // State to control the visibility of the new chart modal
-  const [showGraphModal, setShowGraphModal] = useState(false); 
 
-  // Removed historicalData and graphLoading states as they are now managed in HistoricalCharts.js
-  // const [historicalData, setHistoricalData] = useState(null);
-  // const [graphLoading, setGraphLoading] = useState(false); 
-  
+  // Historical chart modal + ref for snapshots
+  const [showGraphModal, setShowGraphModal] = useState(false);
+  const chartsRef = useRef(null);
+
+  // Plant creation modal/presets
   const [showPlantModal, setShowPlantModal] = useState(false);
   const [availablePresets, setAvailablePresets] = useState([]);
   const [selectedPreset, setSelectedPreset] = useState(null);
@@ -63,16 +65,13 @@ export default function DashboardPage() {
   });
   const [form] = Form.useForm();
 
-  // Fetch plant presets from database
+  // Fetch plant presets
   const fetchPlantPresets = async () => {
     try {
       const response = await fetch("/api/plants?presets=true");
-      if (response.ok) {
-        const data = await response.json();
-        setAvailablePresets(data.presets || []);
-      } else {
-        message.error("Failed to load plant presets");
-      }
+      if (!response.ok) throw new Error("Failed to load plant presets");
+      const data = await response.json();
+      setAvailablePresets(data.presets || []);
     } catch (error) {
       console.error("Error fetching presets:", error);
       message.error("Error loading plant presets");
@@ -80,23 +79,14 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/signin");
-    }
-    
-    if (status === "authenticated") {
-      fetchPlantPresets();
-    }
+    if (status === "unauthenticated") router.push("/signin");
+    if (status === "authenticated") fetchPlantPresets();
   }, [status, router]);
 
   useEffect(() => {
     const savedPlant = localStorage.getItem("selectedPlant");
     const savedStage = localStorage.getItem("selectedStage");
-
-    if (savedPlant) {
-      setSelectedPlant(savedPlant);
-    }
-    
+    if (savedPlant) setSelectedPlant(savedPlant);
     if (savedStage) {
       setSelectedStage(savedStage);
       setDropdownStage(savedStage);
@@ -109,58 +99,49 @@ export default function DashboardPage() {
 
     const fetchIdealConditions = async () => {
       try {
-        // Updated endpoint to use correct query parameters
-        const response = await fetch(
-          `/api/sensordata?plant=${selectedPlant}&stage=${selectedStage}`
-        );
-        const data = await response.json();
+        const res = await fetch(`/api/sensordata?plant=${selectedPlant}&stage=${selectedStage}`);
+        const data = await res.json();
         setIdealConditions(data.ideal_conditions);
-      } catch (error) {
-        console.error("Failed to fetch ideal conditions:", error);
+      } catch (e) {
+        console.error("Failed to fetch ideal conditions:", e);
       }
     };
 
     const fetchData = async () => {
       try {
-        const response = await fetch("/api/sensordata");
-        const data = await response.json();
+        const res = await fetch("/api/sensordata");
+        const data = await res.json();
         setSensorData(data.sensorData);
         setSensorStatus(data.sensorStatus);
         setLastUpdated(new Date().toLocaleTimeString());
-      } catch (error) {
-        console.error("Failed to fetch sensor data:", error);
+      } catch (e) {
+        console.error("Failed to fetch sensor data:", e);
       }
     };
 
     fetchIdealConditions();
     fetchData();
-    const intervalId = setInterval(() => {
-      fetchData();
-    }, 3000);
-
+    const intervalId = setInterval(fetchData, 3000);
     return () => clearInterval(intervalId);
   }, [selectedPlant, selectedStage]);
 
   const handleCreatePlant = async () => {
     try {
       const values = await form.validateFields();
-      
-      let idealConditionsToUse;
 
+      let idealConditionsToUse;
       if (isCustomPlant) {
-        // Use custom ideal conditions from form
         idealConditionsToUse = customIdealConditions;
       } else {
-        // Use preset ideal conditions
         if (!selectedPreset) {
           message.error("Please select a plant type");
           return;
         }
-
-        const presetResponse = await fetch(`/api/plants?presets=true&plant=${selectedPreset.plant_name}&stage=${dropdownStage}`);
+        const presetResponse = await fetch(
+          `/api/plants?presets=true&plant=${selectedPreset.plant_name}&stage=${dropdownStage}`
+        );
         const presetData = await presetResponse.json();
-        // Assuming presetData.ideal_conditions is the structure you need
-        idealConditionsToUse = presetData.ideal_conditions || selectedPreset.ideal_conditions; 
+        idealConditionsToUse = presetData.ideal_conditions || selectedPreset.ideal_conditions;
       }
 
       const response = await fetch("/api/plants", {
@@ -174,20 +155,18 @@ export default function DashboardPage() {
         }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setSelectedPlant(data.plant.plant_name);
-        setSelectedStage(dropdownStage);
-        setNewStage(dropdownStage);
-        localStorage.setItem("selectedPlant", data.plant.plant_name);
-        localStorage.setItem("selectedStage", dropdownStage);
-        setShowPlantModal(false);
-        setIsCustomPlant(false);
-        form.resetFields();
-        message.success(`${values.customPlantName} created successfully!`);
-      } else {
-        message.error("Failed to create plant");
-      }
+      if (!response.ok) throw new Error("Failed to create plant");
+
+      const data = await response.json();
+      setSelectedPlant(data.plant.plant_name);
+      setSelectedStage(dropdownStage);
+      setNewStage(dropdownStage);
+      localStorage.setItem("selectedPlant", data.plant.plant_name);
+      localStorage.setItem("selectedStage", dropdownStage);
+      setShowPlantModal(false);
+      setIsCustomPlant(false);
+      form.resetFields();
+      message.success(`${values.customPlantName} created successfully!`);
     } catch (error) {
       console.error("Error creating plant:", error);
       message.error("Please fill in all required fields or check custom values");
@@ -205,17 +184,13 @@ export default function DashboardPage() {
           selectedStage: stageName,
         }),
       });
-      if (response.ok) {
-        setSelectedPlant(plantName);
-        setSelectedStage(stageName);
-        setNewStage(stageName);
-        localStorage.setItem("selectedPlant", plantName);
-        localStorage.setItem("selectedStage", stageName);
-        message.success(`${plantName} (${stageName}) selected successfully!`);
-      } else {
-        console.error("Failed to save plant selection/stage update.");
-        message.error("Failed to save plant selection");
-      }
+      if (!response.ok) throw new Error("Failed to save plant selection");
+      setSelectedPlant(plantName);
+      setSelectedStage(stageName);
+      setNewStage(stageName);
+      localStorage.setItem("selectedPlant", plantName);
+      localStorage.setItem("selectedStage", stageName);
+      message.success(`${plantName} (${stageName}) selected successfully!`);
     } catch (error) {
       console.error("Failed to send plant selection/stage update:", error);
       message.error("Error selecting plant");
@@ -228,41 +203,36 @@ export default function DashboardPage() {
 
   const handleAbortPlant = async () => {
     try {
+      // Try to capture chart snapshots if the historical modal has been opened before
+      const snapshots = chartsRef.current?.getSnapshots?.() || null;
+
       const response = await fetch("/api/sensordata", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ action: "abort_plant" }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "abort_plant", snapshots }),
       });
 
-      if (response.ok) {
-        setSelectedPlant(null);
-        setSelectedStage(null);
-        localStorage.removeItem("selectedPlant");
-        localStorage.removeItem("selectedStage");
-        setSensorData({});
-        setIdealConditions({});
-        setDropdownStage("seedling");
-        setNewStage("seedling");
-        setShowPlantModal(true);
-        message.success("Plant aborted successfully");
-      } else {
-        console.error("Failed to abort plant.");
-        message.error("Failed to abort plant");
-      }
+      if (!response.ok) throw new Error("Failed to abort plant");
+
+      setSelectedPlant(null);
+      setSelectedStage(null);
+      localStorage.removeItem("selectedPlant");
+      localStorage.removeItem("selectedStage");
+      setSensorData({});
+      setIdealConditions({});
+      setDropdownStage("seedling");
+      setNewStage("seedling");
+      setShowPlantModal(true);
+      message.success("Plant aborted and archived");
     } catch (error) {
       console.error("Request failed:", error);
       message.error("Error aborting plant");
     }
   };
 
-  // Replaced fetchHistoricalData logic with just setting the modal state
-  const openHistoricalGraph = () => {
-    setShowGraphModal(true);
-  };
+  const openHistoricalGraph = () => setShowGraphModal(true);
 
-  // REPLACED GrowthModal with an Antd Modal housing the new component
+  // Charts modal
   const ChartModal = () => (
     <Modal
       open={showGraphModal}
@@ -270,16 +240,18 @@ export default function DashboardPage() {
       footer={null}
       width="90%"
       centered
-      closable={true}
-      maskClosable={true}
-      style={{ top: 20 }} // Pushes the modal down slightly
+      closable
+      maskClosable
+      destroyOnClose={false}
+      style={{ top: 20 }}
       bodyStyle={{ padding: 0 }}
     >
-      {/* Use the new component and pass the visibility state */}
-      <HistoricalCharts show={showGraphModal} />
+      {/* HistoricalCharts keeps previous render during background fetches */}
+      <HistoricalCharts ref={chartsRef} show={showGraphModal} />
     </Modal>
   );
 
+  // Create Plant modal
   const PlantCreationModal = () => (
     <Modal
       open={showPlantModal}
@@ -291,39 +263,29 @@ export default function DashboardPage() {
       footer={null}
       width={700}
       centered
-      closable={true}
-      maskClosable={true}
+      closable
+      maskClosable
+      destroyOnClose={false}
     >
-      <div style={{ textAlign: 'center', padding: '20px 0' }}>
-        
-        <Title level={2} style={{ marginBottom: '8px' }}>
+      <div style={{ textAlign: "center", padding: "20px 0" }}>
+        <Title level={2} style={{ marginBottom: "8px" }}>
           🌱 Create Your Plant
         </Title>
-        
-        <Paragraph style={{ fontSize: '16px', color: '#6b7280', marginBottom: '32px' }}>
+
+        <Paragraph style={{ fontSize: "16px", color: "#6b7280", marginBottom: "32px" }}>
           Choose a plant preset or create a custom configuration.
         </Paragraph>
 
-        <Form
-          form={form}
-          layout="vertical"
-          style={{ maxWidth: '600px', margin: '0 auto', textAlign: 'left' }}
-        >
+        <Form form={form} layout="vertical" style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}>
           <Form.Item
             name="customPlantName"
             label={<Text strong>Plant Name</Text>}
-            rules={[{ required: true, message: 'Please enter a name for your plant' }]}
+            rules={[{ required: true, message: "Please enter a name for your plant" }]}
           >
-            <Input
-              size="large"
-              placeholder="e.g., My Pothos Plant"
-            />
+            <Input size="large" placeholder="e.g., My Pothos Plant" />
           </Form.Item>
 
-          <Form.Item
-            label={<Text strong>Configuration Type</Text>}
-            required
-          >
+          <Form.Item label={<Text strong>Configuration Type</Text>} required>
             <Select
               size="large"
               placeholder="Choose preset or custom"
@@ -334,20 +296,18 @@ export default function DashboardPage() {
                   setSelectedPreset(null);
                 } else {
                   setIsCustomPlant(false);
-                  const preset = availablePresets.find(p => p.plant_name === value);
+                  const preset = availablePresets.find((p) => p.plant_name === value);
                   setSelectedPreset(preset);
                 }
               }}
-              style={{ width: '100%' }}
+              style={{ width: "100%" }}
             >
               {availablePresets.map((preset) => (
                 <Option key={preset._id} value={preset.plant_name}>
                   {preset.plant_name.charAt(0).toUpperCase() + preset.plant_name.slice(1)}
                 </Option>
               ))}
-              <Option value="custom">
-                Custom Configuration
-              </Option>
+              <Option value="custom">Custom Configuration</Option>
             </Select>
           </Form.Item>
 
@@ -355,10 +315,10 @@ export default function DashboardPage() {
             <>
               <Alert
                 message="Custom Plant Configuration"
-                description="Set your ideal environmental ranges for optimal growth. The system will monitor and alert you when values fall outside these ranges."
+                description="Set your ideal environmental ranges for optimal growth. The system will alert you when values fall outside these ranges."
                 type="info"
                 showIcon
-                style={{ marginBottom: '16px' }}
+                style={{ marginBottom: "16px" }}
               />
 
               <Title level={5}>Temperature Range (°C)</Title>
@@ -366,9 +326,9 @@ export default function DashboardPage() {
                 <Col span={12}>
                   <Form.Item label="Minimum">
                     <InputNumber
-                      style={{ width: '100%' }}
+                      style={{ width: "100%" }}
                       value={customIdealConditions.temp_min}
-                      onChange={(value) => setCustomIdealConditions({...customIdealConditions, temp_min: value})}
+                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, temp_min: v }))}
                       min={10}
                       max={40}
                     />
@@ -377,9 +337,9 @@ export default function DashboardPage() {
                 <Col span={12}>
                   <Form.Item label="Maximum">
                     <InputNumber
-                      style={{ width: '100%' }}
+                      style={{ width: "100%" }}
                       value={customIdealConditions.temp_max}
-                      onChange={(value) => setCustomIdealConditions({...customIdealConditions, temp_max: value})}
+                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, temp_max: v }))}
                       min={10}
                       max={40}
                     />
@@ -392,9 +352,9 @@ export default function DashboardPage() {
                 <Col span={12}>
                   <Form.Item label="Minimum">
                     <InputNumber
-                      style={{ width: '100%' }}
+                      style={{ width: "100%" }}
                       value={customIdealConditions.humidity_min}
-                      onChange={(value) => setCustomIdealConditions({...customIdealConditions, humidity_min: value})}
+                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, humidity_min: v }))}
                       min={0}
                       max={100}
                     />
@@ -403,9 +363,9 @@ export default function DashboardPage() {
                 <Col span={12}>
                   <Form.Item label="Maximum">
                     <InputNumber
-                      style={{ width: '100%' }}
+                      style={{ width: "100%" }}
                       value={customIdealConditions.humidity_max}
-                      onChange={(value) => setCustomIdealConditions({...customIdealConditions, humidity_max: value})}
+                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, humidity_max: v }))}
                       min={0}
                       max={100}
                     />
@@ -418,9 +378,9 @@ export default function DashboardPage() {
                 <Col span={12}>
                   <Form.Item label="Minimum">
                     <InputNumber
-                      style={{ width: '100%' }}
+                      style={{ width: "100%" }}
                       value={customIdealConditions.ph_min}
-                      onChange={(value) => setCustomIdealConditions({...customIdealConditions, ph_min: value})}
+                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, ph_min: v }))}
                       min={0}
                       max={14}
                       step={0.1}
@@ -430,9 +390,9 @@ export default function DashboardPage() {
                 <Col span={12}>
                   <Form.Item label="Maximum">
                     <InputNumber
-                      style={{ width: '100%' }}
+                      style={{ width: "100%" }}
                       value={customIdealConditions.ph_max}
-                      onChange={(value) => setCustomIdealConditions({...customIdealConditions, ph_max: value})}
+                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, ph_max: v }))}
                       min={0}
                       max={14}
                       step={0.1}
@@ -446,9 +406,9 @@ export default function DashboardPage() {
                 <Col span={12}>
                   <Form.Item label="Minimum">
                     <InputNumber
-                      style={{ width: '100%' }}
+                      style={{ width: "100%" }}
                       value={customIdealConditions.ppm_min}
-                      onChange={(value) => setCustomIdealConditions({...customIdealConditions, ppm_min: value})}
+                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, ppm_min: v }))}
                       min={0}
                       max={5000}
                     />
@@ -457,9 +417,9 @@ export default function DashboardPage() {
                 <Col span={12}>
                   <Form.Item label="Maximum">
                     <InputNumber
-                      style={{ width: '100%' }}
+                      style={{ width: "100%" }}
                       value={customIdealConditions.ppm_max}
-                      onChange={(value) => setCustomIdealConditions({...customIdealConditions, ppm_max: value})}
+                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, ppm_max: v }))}
                       min={0}
                       max={5000}
                     />
@@ -470,9 +430,9 @@ export default function DashboardPage() {
               <Title level={5}>Light PWM Cycle (%)</Title>
               <Form.Item>
                 <InputNumber
-                  style={{ width: '100%' }}
+                  style={{ width: "100%" }}
                   value={customIdealConditions.light_pwm_cycle}
-                  onChange={(value) => setCustomIdealConditions({...customIdealConditions, light_pwm_cycle: value})}
+                  onChange={(v) => setCustomIdealConditions((s) => ({ ...s, light_pwm_cycle: v }))}
                   min={0}
                   max={100}
                 />
@@ -482,17 +442,17 @@ export default function DashboardPage() {
 
           <Form.Item
             label={
-              <Text strong style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Text strong style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 Growth Stage
-                <Tooltip 
-                  title="Our kit groups plant growth into 3 broad stages. Click to learn more about each stage."
+                <Tooltip
+                  title="Our kit groups plant growth into 3 broad stages. Click to learn more."
                   placement="right"
                 >
                   <a
                     href="https://www.saferbrand.com/articles/plant-growth-stages"
                     target="_blank"
                     rel="noopener noreferrer"
-                    style={{ color: '#10b981' }}
+                    style={{ color: "#10b981" }}
                     onClick={(e) => e.stopPropagation()}
                   >
                     <FaInfoCircle />
@@ -505,7 +465,7 @@ export default function DashboardPage() {
               size="large"
               value={dropdownStage}
               onChange={(value) => setDropdownStage(value)}
-              style={{ width: '100%' }}
+              style={{ width: "100%" }}
             >
               {GROWTH_STAGES.map((stage) => (
                 <Option key={stage} value={stage}>
@@ -517,13 +477,13 @@ export default function DashboardPage() {
 
           {!isCustomPlant && (
             <>
-              <Divider style={{ margin: '16px 0' }} />
+              <Divider style={{ margin: "16px 0" }} />
               <Alert
                 message="Setup Instructions"
-                description="Ensure the hydroponics tank is filled to the marked range with distilled water before starting. Add more water as required during operation."
+                description="Fill the tank to the marked range with distilled water before starting. Add water as needed."
                 type="info"
                 showIcon
-                style={{ marginBottom: '16px' }}
+                style={{ marginBottom: "16px" }}
               />
             </>
           )}
@@ -531,16 +491,15 @@ export default function DashboardPage() {
           <Button
             type="primary"
             size="large"
-
             onClick={handleCreatePlant}
             block
-            style={{ 
-              height: '48px',
-              fontSize: '16px',
-              fontWeight: 'bold',
-              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-              border: 'none',
-              marginTop: '16px'
+            style={{
+              height: "48px",
+              fontSize: "16px",
+              fontWeight: "bold",
+              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+              border: "none",
+              marginTop: "16px",
             }}
           >
             Create & Start Monitoring
@@ -558,15 +517,14 @@ export default function DashboardPage() {
     );
   }
 
-  if (!session) {
-    return null;
-  }
+  if (!session) return null;
 
-  const headerText = selectedPlant && selectedStage
-    ? `${selectedPlant.charAt(0).toUpperCase() + selectedPlant.slice(1)} - ${
-        selectedStage.charAt(0).toUpperCase() + selectedStage.slice(1)
-      } Stage`
-    : "Plant Dashboard";
+  const headerText =
+    selectedPlant && selectedStage
+      ? `${selectedPlant.charAt(0).toUpperCase() + selectedPlant.slice(1)} - ${
+          selectedStage.charAt(0).toUpperCase() + selectedStage.slice(1)
+        } Stage`
+      : "Plant Dashboard";
 
   const { _id, timestamp, pump, light, tds, distance, ...sensors } = sensorData;
   const { light_pwm_cycle, ...idealRanges } = idealConditions || {};
@@ -578,15 +536,9 @@ export default function DashboardPage() {
       <main className={styles.main}>
         <Card className={styles.welcomeCard}>
           <div className={styles.welcomeContent}>
-            <Avatar
-              src={session.user?.image}
-              size={64}
-              className={styles.avatar}
-            />
+            <Avatar src={session.user?.image} size={64} className={styles.avatar} />
             <div>
-              <h2 className={styles.welcomeTitle}>
-                Welcome back, {session.user?.name || "User"}!
-              </h2>
+              <h2 className={styles.welcomeTitle}>Welcome back, {session.user?.name || "User"}!</h2>
               <p className={styles.welcomeEmail}>{session.user?.email}</p>
             </div>
           </div>
@@ -596,15 +548,11 @@ export default function DashboardPage() {
           <div className={styles.infoGrid}>
             <div className={styles.infoItem}>
               <p className={styles.infoLabel}>Name</p>
-              <p className={styles.infoValue}>
-                {session.user?.name || "Not provided"}
-              </p>
+              <p className={styles.infoValue}>{session.user?.name || "Not provided"}</p>
             </div>
             <div className={styles.infoItem}>
               <p className={styles.infoLabel}>Email</p>
-              <p className={styles.infoValue}>
-                {session.user?.email || "Not provided"}
-              </p>
+              <p className={styles.infoValue}>{session.user?.email || "Not provided"}</p>
             </div>
             <div className={styles.infoItem}>
               <p className={styles.infoLabel}>Account Id</p>
@@ -620,13 +568,10 @@ export default function DashboardPage() {
           </div>
 
           {selectedPlant && selectedStage ? (
-            /* Sensor Monitoring View */
             <>
-              <p className={styles.lastUpdated}>
-                Last updated: {lastUpdated}
-              </p>
+              <p className={styles.lastUpdated}>Last updated: {lastUpdated}</p>
 
-              {/* Sensor Cards Section */}
+              {/* Sensor Cards */}
               <div className={styles.sensorGrid}>
                 {Object.keys(sensors).map((key) => {
                   const value = sensors[key];
@@ -639,12 +584,11 @@ export default function DashboardPage() {
                     valueDisplay = value ? "IDEAL" : "TOO LOW";
                     statusClass = value ? styles.ideal : styles.warning;
                   } else if (key === "ppm" && status === "DILUTE_WATER") {
-                    valueDisplay =
-                      value !== null ? parseFloat(value).toFixed(2) : "Loading...";
+                    valueDisplay = value != null ? parseFloat(value).toFixed(2) : "Loading...";
                     statusClass = styles.dilute;
                   } else {
                     valueDisplay =
-                      value !== null
+                      value != null
                         ? typeof value === "number"
                           ? parseFloat(value).toFixed(2)
                           : value
@@ -655,13 +599,9 @@ export default function DashboardPage() {
                   return (
                     <div key={key} className={styles.sensorCardWrapper}>
                       <div className={styles.sensorCard}>
-                        <div className={styles.sensorName}>
-                          {sensorNames[key] || key}
-                        </div>
+                        <div className={styles.sensorName}>{sensorNames[key] || key}</div>
 
-                        <div className={`${styles.sensorValue} ${statusClass}`}>
-                          {valueDisplay}
-                        </div>
+                        <div className={`${styles.sensorValue} ${statusClass}`}>{valueDisplay}</div>
 
                         <div className={styles.idealRange}>
                           Ideal:{" "}
@@ -675,17 +615,18 @@ export default function DashboardPage() {
                             ? `${idealRanges?.ppm_min} – ${idealRanges?.ppm_max}`
                             : key === "water_sufficient"
                             ? "Sufficient"
-                            : "Range N/A"}
+                            : "Range N/A"
+                            }
                         </div>
                       </div>
 
-                      {/* PPM DILUTION WARNING */}
+                      {/* PPM dilution warning */}
                       {key === "ppm" && status === "DILUTE_WATER" && (
                         <div className={styles.ppmWarning}>
                           <FaExclamationTriangle className={styles.ppmWarningIcon} />
                           <p className={styles.ppmWarningText}>
-                            PPM TOO HIGH: Manual dilution required. Please add
-                            distilled water to lower nutrient concentration.
+                            PPM TOO HIGH: Manual dilution required. Please add distilled water to lower nutrient
+                            concentration.
                           </p>
                         </div>
                       )}
@@ -694,36 +635,31 @@ export default function DashboardPage() {
                 })}
               </div>
 
-              {/* Abort Button */}
+              {/* Abort */}
               <div className={styles.abortSection}>
-                <Button
-                  danger
-                  size="large"
-                  onClick={handleAbortPlant}
-                  style={{ fontWeight: 'bold' }}
-                >
+                <Button danger size="large" onClick={handleAbortPlant} style={{ fontWeight: "bold" }}>
                   Abort Plant
                 </Button>
               </div>
             </>
           ) : (
-            /* Empty State */
-            <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-              <FaLeaf style={{ fontSize: '64px', color: '#d1d5db', marginBottom: '24px' }} />
-              <Title level={3} style={{ color: '#9ca3af', marginBottom: '16px' }}>
+            // Empty state
+            <div style={{ textAlign: "center", padding: "60px 20px" }}>
+              <FaLeaf style={{ fontSize: "64px", color: "#d1d5db", marginBottom: "24px" }} />
+              <Title level={3} style={{ color: "#9ca3af", marginBottom: "16px" }}>
                 No Plant Selected
               </Title>
-              <Paragraph style={{ color: '#6b7280', marginBottom: '24px' }}>
+              <Paragraph style={{ color: "#6b7280", marginBottom: "24px" }}>
                 Create a plant to start monitoring your smart garden
               </Paragraph>
               <Button
                 type="primary"
                 size="large"
                 onClick={() => setShowPlantModal(true)}
-                style={{ 
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  border: 'none',
-                  fontWeight: 'bold'
+                style={{
+                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                  border: "none",
+                  fontWeight: "bold",
                 }}
               >
                 Create Plant
@@ -732,50 +668,33 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Utility Bar - Only show when plant is selected */}
+        {/* Utility Bar (when selected) */}
         {selectedPlant && selectedStage && (
           <div className={styles.utilityBar}>
-            {/* View Growth Button Card */}
             <div className={styles.utilityCardLeft}>
               <div className={styles.utilityCard}>
                 <Button
                   type="primary"
-                  // Call the function to show the modal (which triggers data fetching)
-                  onClick={openHistoricalGraph} 
-                  style={{ 
-                    backgroundColor: '#10b981',
-                    borderColor: '#10b981',
-                    fontWeight: 'bold'
-                  }}
+                  onClick={openHistoricalGraph}
+                  style={{ backgroundColor: "#10b981", borderColor: "#10b981", fontWeight: "bold" }}
                 >
                   View Historical Growth
                 </Button>
               </div>
             </div>
 
-            {/* Stage Update Card */}
             <div className={styles.utilityCardRight}>
               <div className={styles.stageUpdateCard}>
-                <p className={styles.stageUpdateLabel}>
-                  Update Growth Stage:
-                </p>
+                <p className={styles.stageUpdateLabel}>Update Growth Stage:</p>
                 <div className={styles.stageUpdateControls}>
-                  <Select
-                    value={newStage}
-                    onChange={(value) => setNewStage(value)}
-                    style={{ flex: 1 }}
-                  >
+                  <Select value={newStage} onChange={(v) => setNewStage(v)} style={{ flex: 1 }}>
                     {GROWTH_STAGES.map((stage) => (
                       <Option key={stage} value={stage}>
                         {stage.charAt(0).toUpperCase() + stage.slice(1)} Stage
                       </Option>
                     ))}
                   </Select>
-                  <Button
-                    type="primary"
-                    onClick={handleStageUpdate}
-                    style={{ fontWeight: 'bold' }}
-                  >
+                  <Button type="primary" onClick={handleStageUpdate} style={{ fontWeight: "bold" }}>
                     Update
                   </Button>
                 </div>
@@ -784,10 +703,19 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Graph Modal - Now uses the Ant Design Modal component */}
+        {/* Past Grows Section */}
+        <div style={{ marginTop: 24 }}>
+          <Title level={4} style={{ margin: "0 0 12px" }}>
+            Past Grows
+          </Title>
+          <Paragraph style={{ color: "#6b7280", marginBottom: 16 }}>
+            Review archived plants, summary stats, and saved chart snapshots.
+          </Paragraph>
+          <PastGrowsGrid />
+        </div>
+
+        {/* Modals */}
         <ChartModal />
-        
-        {/* Plant Creation Modal */}
         <PlantCreationModal />
       </main>
     </div>
