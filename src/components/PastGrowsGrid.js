@@ -107,7 +107,11 @@ export default function PastGrowsGrid() {
       ) : (
         <Row gutter={[16, 16]}>
           {items.map((it) => (
-            <Col key={it._id} xs={24} lg={12}>
+            <Col
+              key={it._id}
+              xs={24}
+              lg={items.length === 1 ? 24 : 12} // full width if only one card
+            >
               <ArchiveCardHorizontal
                 item={it}
                 onOpen={() => onOpenDetails(it._id)}
@@ -135,21 +139,17 @@ function ArchiveCardHorizontal({ item, onOpen, onDelete }) {
   const stage = (item?.finalStage || '—').toLowerCase();
   const name = niceName(item?.plantName || 'Unknown Plant');
   const stats = item?.stats;
-
-  // const cover = item?.snapshots?.temperature; // If you projected it in GET list
   const cover = null;
 
-  // stop card click when pressing delete
   const handleDeleteClick = async (e) => {
     e.stopPropagation();
-    // confirmed in Popconfirm
   };
 
   return (
     <Card
       hoverable
       onClick={onOpen}
-      style={{ borderRadius: 14 }}
+      style={{ borderRadius: 14, background: 'white' }}
       bodyStyle={{ padding: 14 }}
     >
       <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
@@ -184,7 +184,6 @@ function ArchiveCardHorizontal({ item, onOpen, onDelete }) {
                 <span>{fmtDate(start)} — {fmtDate(end)}</span>
               </Space>
 
-              {/* Row-level delete icon */}
               <Popconfirm
                 title="Delete this archive?"
                 description="This will permanently delete the archived plant and its stored snapshots."
