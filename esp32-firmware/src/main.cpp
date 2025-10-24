@@ -176,21 +176,29 @@ void readPhSensor() {
     delay(10);
   }
   float avgAnalog = sumAnalog / (float)numSamples;
-  float voltage = avgAnalog * 3.3 / 4096.0;
+  
+  // --- MODIFICATION START ---
+  float phValue;
+  if (avgAnalog == 0) {
+    // If the raw analog read is 0, default the pH value to 0.0
+    phValue = 0.0; 
+  } else {
+    // Proceed with calculation if the reading is non-zero
+    float voltage = avgAnalog * 3.3 / 4096.0;
 
-  const float PH_SLOPE = 3.57; 
-  const float PH_OFFSET = 21.34;
+    const float PH_SLOPE = 3.57; 
+    const float PH_OFFSET = 21.34;
 
-  float phValue = PH_OFFSET - (PH_SLOPE * voltage);
+    phValue = PH_OFFSET - (PH_SLOPE * voltage);
+  }
+  // --- MODIFICATION END ---
 
   if (phValue < 0) phValue = 0;
   if (phValue > 14) phValue = 14;
   
   Serial.print("Raw pH Analog: ");
   Serial.print(avgAnalog);
-  Serial.print(" | Voltage: ");
-  Serial.print(voltage, 3);
-  Serial.print("V | Measured pH: ");
+  Serial.print(" | Measured pH: ");
   Serial.println(phValue, 2);
 
   sensorData["ph"] = phValue;
