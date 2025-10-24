@@ -6,6 +6,105 @@ import { ObjectId } from 'mongodb';
 import clientPromise from '../../../lib/mongodb';
 import { auth } from '../auth/[...nextauth]/route';
 
+import mongoose from "mongoose";
+
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) throw new Error("Missing MONGODB_URI in environment");
+
+// Simple cached connection (doesn't change your other db code)
+let cached = global._plantsDbCache;
+if (!cached) cached = global._plantsDbCache = { conn: null, promise: null };
+
+async function connect() {
+  if (cached.conn) return cached.conn;
+  if (!cached.promise) {
+    cached.promise = mongoose.connect(MONGODB_URI, {
+      bufferCommands: false,
+      serverSelectionTimeoutMS: 5000,
+    }).then((m) => m);
+  }
+  cached.conn = await cached.promise;
+  return cached.conn;
+}
+
+// Inline model used only by this route (doesn't replace any existing model files)
+const IdealSchema = new mongoose.Schema({
+  ph_min: Number, ph_max: Number,
+  ppm_min: Number, ppm_max: Number,
+  temp_min: Number, temp_max: Number,
+  humidity_min: Number, humidity_max: Number,
+  light_pwm_cycle: Number,
+}, { _id: false });
+
+const PlantProfileSchema = new mongoose.Schema({
+  plant_name: { type: String, required: true, lowercase: true, trim: true },
+  stage: { type: String, required: true, lowercase: true, trim: true },
+  ideal_conditions: { type: IdealSchema, required: true },
+}, { collection: "plant_profiles", timestamps: true });
+
+PlantProfileSchema.index({ plant_name: 1, stage: 1 }, { unique: true });
+
+const PlantProfile =
+  mongoose.models.PlantProfile || mongoose.model("PlantProfile", PlantProfileSchema);
+
+// GET /api/plants?presets=true
+// GET /api/plants?presets=true&plant=<pothos|mint|monstera>&stage=<seedling|vegetative|mature>
+export async function GET(req) {
+  try {
+    await connect();
+
+    const { searchParams } = new URL(req.url);
+    const presets = searchParams.get("presets");
+    const plant = searchParams.get("plant")?.toLowerCase().trim();
+    const stage = searchParams.get("stage")?.toLowerCase().trim();
+
+    if (presets === "true" && !plant && !stage) {
+      // Return the three preset names you care about (safe even if extra docs exist)
+      const allowed = ["pothos", "mint", "monstera"];
+      const names = await PlantProfile.aggregate([
+        { $match: { plant_name: { $in: allowed } } },
+        { $group: { _id: "$plant_name" } },
+        { $project: { _id: 0, plant_name: "$_id" } },
+        { $sort: { plant_name: 1 } },
+      ]);
+      return new Response(JSON.stringify({ presets: names }), {
+        status: 200,
+        headers: { "content-type": "application/json", "cache-control": "no-store" },
+      });
+    }
+
+    if (presets === "true" && plant && stage) {
+      const doc = await PlantProfile.findOne({ plant_name: plant, stage }).lean();
+      if (!doc) {
+        return new Response(JSON.stringify({ error: "Not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({
+        plant_name: doc.plant_name,
+        stage: doc.stage,
+        ideal_conditions: doc.ideal_conditions,
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json", "cache-control": "no-store" },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: "Bad request" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  } catch (err) {
+    console.error("/api/plants GET error:", err);
+    return new Response(JSON.stringify({ error: "Server error" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
+  }
+}
+
+
 /**
  * GET /api/plants
  * - ?presets=true&plant=<name>&stage=<stage> -> preset ideal_conditions (no userId)
