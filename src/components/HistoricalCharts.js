@@ -210,7 +210,9 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
 export default HistoricalCharts;
 
 /** One chart with an ideal-range green band */
+/** One chart with an ideal-range green band (no flicker version) */
 function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, timeUnit }) {
+  // map to points (x: Date, y: number)
   const points = useMemo(() => (
     rows
       .map(r => {
@@ -221,6 +223,7 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
       .filter(Boolean)
   ), [rows, field]);
 
+  // keep a stable dataset shape; just swap .data
   const data = useMemo(() => ({
     datasets: [
       {
@@ -231,6 +234,8 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
         pointRadius: 0,
         tension: 0.25,
         fill: false,
+        spanGaps: true,   // draw across missing bins
+        // skipNull: true, // (Chart.js v4 supports null skipping too)
       }
     ]
   }), [points, title]);
@@ -251,6 +256,9 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
   const options = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
+    normalized: true,               // improve perf on large/irregular data
+    animation: { duration: 0 },     // no fade/flash during updates
+    transitions: { active: { animation: { duration: 0 } } },
     plugins: {
       legend: { display: false },
       title: { display: true, text: `${title}${unit ? `  (Ideal: ${idealMin ?? '—'}–${idealMax ?? '—'} ${unit})` : ''}` },
@@ -265,6 +273,7 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
       },
       annotation: { annotations }
     },
+    interaction: { mode: 'nearest', intersect: false },
     scales: {
       x: { type: 'time', time: { unit: timeUnit }, grid: { display: false }, ticks: { maxRotation: 0 } },
       y: { beginAtZero: false, grid: { color: 'rgba(0,0,0,0.08)' }, ticks: { callback: v => `${v}${unit ? ` ${unit}` : ''}` } }
@@ -272,17 +281,14 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
     elements: { line: { borderJoinStyle: 'round' } }
   }), [annotations, idealMin, idealMax, timeUnit, title, unit]);
 
-  // Attach ref directly to Line (react-chartjs-2 forwards it to chart instance)
+  // Always render the Line (no conditional), even if points are empty
   return (
     <div style={{ height: 260, border: '1px solid #e5e7eb', borderRadius: 10, padding: 12 }}>
-      {points.length ? (
-        <Line ref={chartRef} data={data} options={options} />
-      ) : (
-        <div style={{ padding: 8, opacity: 0.7 }}>No {title} data yet.</div>
-      )}
+      <Line ref={chartRef} data={data} options={options} updateMode="none" />
     </div>
   );
 }
+
 
 /* tiny css keyframes for skeleton (optional) */
 const style = typeof document !== 'undefined' && document.createElement('style');
