@@ -1,197 +1,246 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Modal, Form, InputNumber, Radio, Select, message, Typography, Divider, Space } from "antd";
+'use client';
 
-/**
- * Drop-in AddPlantModal that supports three presets (pothos, mint, monstera)
- * and three stages (seedling, vegetative, mature). For presets, it fetches the
- * ideal conditions from your backend:
- *   GET /api/plants?presets=true&plant=<name>&stage=<stage>
- * Expected response: { plant_name, stage, ideal_conditions: { ... } }
- *
- * Props:
- * - visible: boolean
- * - mode: 'create' | 'edit'
- * - initial: optional initial plant object when editing
- * - onCancel: () => void
- * - onSubmit: (payload) => void  // payload contains { plant_name, stage, ideal_conditions }
- */
+import React, { useState, useCallback } from 'react';
+import { Modal, Form, Input, InputNumber, Select, Button, message, Space } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 
-const { Text } = Typography;
+const { Option } = Select;
 
-const GROWTH_STAGES = ["seedling", "vegetative", "mature"];
-const PRESET_PLANTS = ["pothos", "mint", "monstera"];
-
-const fetchPresetFromDB = async (plant, stage) => {
-  const res = await fetch(`/api/plants?presets=true&plant=${encodeURIComponent(plant)}&stage=${encodeURIComponent(stage)}`);
-  if (!res.ok) throw new Error("Preset not found in DB");
-  const data = await res.json();
-  return data.ideal_conditions || {};
-};
-
-export default function AddPlantModal({ visible, mode = "create", initial = null, onCancel, onSubmit }) {
+function AddPlantModalInner({ visible, onClose, onSuccess, deviceId }) {
   const [form] = Form.useForm();
-  const [configType, setConfigType] = useState("custom"); // 'custom' | 'pothos' | 'mint' | 'monstera'
-  const [stage, setStage] = useState("vegetative");
-  const [loadingPreset, setLoadingPreset] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // Initialize config type and stage when modal opens
-  useEffect(() => {
-    if (!visible) return;
+  const stages = ['seedling', 'vegetative', 'flowering', 'mature', 'harvest'];
 
-    // Determine default config type
-    if (mode === "edit" && initial?.plant_name) {
-      const lower = String(initial.plant_name).toLowerCase();
-      if (PRESET_PLANTS.includes(lower)) {
-        setConfigType(lower);
-      } else {
-        setConfigType("custom");
-      }
-    } else {
-      setConfigType("custom");
-    }
-
-    // Determine default stage
-    if (mode === "edit" && initial?.stage && GROWTH_STAGES.includes(String(initial.stage).toLowerCase())) {
-      setStage(String(initial.stage).toLowerCase());
-    } else {
-      setStage("vegetative");
-    }
-
-    // Seed form with initial ideal_conditions if editing custom or if present
-    if (mode === "edit" && initial?.ideal_conditions) {
-      form.setFieldsValue(initial.ideal_conditions);
-    } else {
-      form.resetFields();
-    }
-  }, [visible, mode, initial, form]);
-
-  // Prefill from MongoDB whenever configType or stage changes (for non-custom)
-  useEffect(() => {
-    if (!visible) return;
-    if (configType === "custom") return; // user will enter their own values
-
-    let mounted = true;
-    setLoadingPreset(true);
-    fetchPresetFromDB(configType, stage)
-      .then((cond) => {
-        if (!mounted) return;
-        form.setFieldsValue(cond);
-      })
-      .catch(() => {
-        if (!mounted) return;
-        message.warning(`No preset for ${configType}/${stage} found in MongoDB`);
-        form.resetFields();
-      })
-      .finally(() => mounted && setLoadingPreset(false));
-
-    return () => {
-      mounted = false;
-    };
-  }, [configType, stage, visible, form]);
-
-  const plantName = useMemo(() => (configType === "custom" ? "custom" : configType), [configType]);
-
-  const handleOk = async () => {
+  const handleSubmit = useCallback(async () => {
     try {
       const values = await form.validateFields();
-      const payload = {
-        plant_name: plantName,
-        stage,
+      setLoading(true);
+
+      // Construct payload without creating new object identities on every keystroke
+      const plantProfile = {
+        plant_name: values.plant_name.toLowerCase().trim(),
+        stage: values.stage,
         ideal_conditions: {
-          ph_min: values.ph_min ?? null,
-          ph_max: values.ph_max ?? null,
-          ppm_min: values.ppm_min ?? null,
-          ppm_max: values.ppm_max ?? null,
-          temp_min: values.temp_min ?? null,
-          temp_max: values.temp_max ?? null,
-          humidity_min: values.humidity_min ?? null,
-          humidity_max: values.humidity_max ?? null,
-          light_pwm_cycle: values.light_pwm_cycle ?? null,
+          ph_min: Number(values.ph_min),
+          ph_max: Number(values.ph_max),
+          ppm_min: Number(values.ppm_min),
+          ppm_max: Number(values.ppm_max),
+          temp_min: Number(values.temp_min),
+          temp_max: Number(values.temp_max),
+          humidity_min: Number(values.humidity_min),
+          humidity_max: Number(values.humidity_max),
+          light_pwm_cycle: Number(values.light_pwm_cycle),
+          ideal_light_distance_cm: Number(values.ideal_light_distance_cm),
+          light_distance_tolerance_cm: Number(values.light_distance_tolerance_cm),
         },
+        ...(deviceId ? { deviceId } : {}),
       };
 
-      // Bubble up to parent (parent can POST /api/plants and/or /api/sensordata)
-      onSubmit?.(payload);
-    } catch (e) {
-      // AntD will highlight invalid fields
-    }
-  };
+      const res = await fetch('/api/plants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(plantProfile),
+      });
 
-  const title = mode === "edit" ? "Edit Plant" : "Create Plant";
+      if (!res.ok) throw new Error('Failed to add plant');
+
+      message.success('Plant profile added successfully!');
+      // Keep the modal mounted; just reset the form after success
+      form.resetFields();
+      onSuccess?.();
+      onClose?.();
+    } catch (err) {
+      console.error('Error adding plant:', err);
+      message.error('Failed to add plant profile');
+    } finally {
+      setLoading(false);
+    }
+  }, [form, onClose, onSuccess, deviceId]);
+
+  const handleCancel = useCallback(() => {
+    // Do NOT destroy the content; just close the modal and preserve state if you want
+    form.resetFields();
+    onClose?.();
+  }, [form, onClose]);
 
   return (
     <Modal
+      title="Add New Plant Profile"
       open={visible}
-      title={title}
-      onCancel={onCancel}
-      onOk={handleOk}
-      okText={mode === "edit" ? "Save" : "Create"}
-      confirmLoading={loadingPreset}
-      destroyOnClose
+      onCancel={handleCancel}
+      destroyOnClose={false}   // keep content mounted to avoid flicker
+      forceRender              // mount once so the first open is instant
+      maskClosable={false}
+      footer={[
+        <Button key="cancel" onClick={handleCancel}>Cancel</Button>,
+        <Button
+          key="submit"
+          type="primary"
+          loading={loading}
+          onClick={handleSubmit}
+          icon={<PlusOutlined />}
+        >
+          Add Plant
+        </Button>,
+      ]}
+      width={700}
     >
-      <Space direction="vertical" style={{ width: "100%" }} size="middle">
-        <div>
-          <Text strong>Configuration</Text>
-          <Radio.Group
-            style={{ display: "block", marginTop: 8 }}
-            value={configType}
-            onChange={(e) => setConfigType(e.target.value)}
-            optionType="button"
-            buttonStyle="solid"
-          >
-            <Radio.Button value="custom">Custom</Radio.Button>
-            <Radio.Button value="pothos">Pothos</Radio.Button>
-            <Radio.Button value="mint">Mint</Radio.Button>
-            <Radio.Button value="monstera">Monstera</Radio.Button>
-          </Radio.Group>
-        </div>
+      <Form
+        form={form}
+        layout="vertical"
+        initialValues={{
+          light_pwm_cycle: 12,
+          ideal_light_distance_cm: 15,
+          light_distance_tolerance_cm: 2,
+        }}
+      >
+        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+          {/* Basic Information */}
+          <div>
+            <h3 style={{ marginBottom: '1rem', color: '#667eea' }}>Basic Information</h3>
+            <Form.Item
+              name="plant_name"
+              label="Plant Name"
+              rules={[{ required: true, message: 'Please enter plant name' }]}
+            >
+              <Input placeholder="e.g. Pothos, Basil, Tomato" />
+            </Form.Item>
 
-        <div>
-          <Text strong>Growth Stage</Text>
-          <Select
-            style={{ width: "100%", marginTop: 8 }}
-            value={stage}
-            onChange={(v) => setStage(v)}
-            options={GROWTH_STAGES.map((s) => ({ label: s, value: s }))}
-          />
-        </div>
+            <Form.Item
+              name="stage"
+              label="Growth Stage"
+              rules={[{ required: true, message: 'Please select growth stage' }]}
+            >
+              <Select placeholder="Select growth stage">
+                {stages.map((stage) => (
+                  <Option key={stage} value={stage}>
+                    {stage.charAt(0).toUpperCase() + stage.slice(1)}
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </div>
 
-        <Divider style={{ margin: "8px 0" }} />
+          {/* pH Range */}
+          <div>
+            <h3 style={{ marginBottom: '1rem', color: '#667eea' }}>pH Range</h3>
+            <Space style={{ width: '100%' }}>
+              <Form.Item
+                name="ph_min"
+                label="Minimum pH"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <InputNumber min={0} max={14} step={0.1} placeholder="5.5" style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item
+                name="ph_max"
+                label="Maximum pH"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <InputNumber min={0} max={14} step={0.1} placeholder="6.5" style={{ width: '100%' }} />
+              </Form.Item>
+            </Space>
+          </div>
 
-        <Form form={form} layout="vertical" preserve={false}>
-          <Form.Item label="pH Min" name="ph_min" rules={[{ required: true, message: "Enter pH min" }]}> 
-            <InputNumber style={{ width: "100%" }} step={0.1} min={0} max={14} />
-          </Form.Item>
-          <Form.Item label="pH Max" name="ph_max" rules={[{ required: true, message: "Enter pH max" }]}> 
-            <InputNumber style={{ width: "100%" }} step={0.1} min={0} max={14} />
-          </Form.Item>
+          {/* PPM Range */}
+          <div>
+            <h3 style={{ marginBottom: '1rem', color: '#667eea' }}>PPM (Nutrient) Range</h3>
+            <Space style={{ width: '100%' }}>
+              <Form.Item
+                name="ppm_min"
+                label="Minimum PPM"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <InputNumber min={0} max={5000} step={50} placeholder="200" style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item
+                name="ppm_max"
+                label="Maximum PPM"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <InputNumber min={0} max={5000} step={50} placeholder="400" style={{ width: '100%' }} />
+              </Form.Item>
+            </Space>
+          </div>
 
-          <Form.Item label="PPM Min" name="ppm_min" rules={[{ required: true, message: "Enter PPM min" }]}> 
-            <InputNumber style={{ width: "100%" }} step={10} min={0} />
-          </Form.Item>
-          <Form.Item label="PPM Max" name="ppm_max" rules={[{ required: true, message: "Enter PPM max" }]}> 
-            <InputNumber style={{ width: "100%" }} step={10} min={0} />
-          </Form.Item>
+          {/* Temperature Range */}
+          <div>
+            <h3 style={{ marginBottom: '1rem', color: '#667eea' }}>Temperature Range (°C)</h3>
+            <Space style={{ width: '100%' }}>
+              <Form.Item
+                name="temp_min"
+                label="Minimum Temperature"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <InputNumber min={0} max={50} step={0.5} placeholder="20" style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item
+                name="temp_max"
+                label="Maximum Temperature"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <InputNumber min={0} max={50} step={0.5} placeholder="28" style={{ width: '100%' }} />
+              </Form.Item>
+            </Space>
+          </div>
 
-          <Form.Item label="Temp Min (°C)" name="temp_min" rules={[{ required: true, message: "Enter temp min" }]}> 
-            <InputNumber style={{ width: "100%" }} step={0.5} />
-          </Form.Item>
-          <Form.Item label="Temp Max (°C)" name="temp_max" rules={[{ required: true, message: "Enter temp max" }]}> 
-            <InputNumber style={{ width: "100%" }} step={0.5} />
-          </Form.Item>
+          {/* Humidity Range */}
+          <div>
+            <h3 style={{ marginBottom: '1rem', color: '#667eea' }}>Humidity Range (%)</h3>
+            <Space style={{ width: '100%' }}>
+              <Form.Item
+                name="humidity_min"
+                label="Minimum Humidity"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <InputNumber min={0} max={100} step={5} placeholder="60" style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item
+                name="humidity_max"
+                label="Maximum Humidity"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <InputNumber min={0} max={100} step={5} placeholder="80" style={{ width: '100%' }} />
+              </Form.Item>
+            </Space>
+          </div>
 
-          <Form.Item label="Humidity Min (%)" name="humidity_min" rules={[{ required: true, message: "Enter humidity min" }]}> 
-            <InputNumber style={{ width: "100%" }} step={1} min={0} max={100} />
-          </Form.Item>
-          <Form.Item label="Humidity Max (%)" name="humidity_max" rules={[{ required: true, message: "Enter humidity max" }]}> 
-            <InputNumber style={{ width: "100%" }} step={1} min={0} max={100} />
-          </Form.Item>
+          {/* Light Settings */}
+          <div>
+            <h3 style={{ marginBottom: '1rem', color: '#667eea' }}>Light Settings</h3>
+            <Form.Item
+              name="light_pwm_cycle"
+              label="Light Cycle (hours per day)"
+              rules={[{ required: true, message: 'Required' }]}
+            >
+              <InputNumber min={0} max={24} step={1} placeholder="12" style={{ width: '100%' }} />
+            </Form.Item>
 
-          <Form.Item label="Light PWM Cycle (hours on)" name="light_pwm_cycle" rules={[{ required: true, message: "Enter light hours" }]}> 
-            <InputNumber style={{ width: "100%" }} step={1} min={0} max={24} />
-          </Form.Item>
-        </Form>
-      </Space>
+            <Space style={{ width: '100%' }}>
+              <Form.Item
+                name="ideal_light_distance_cm"
+                label="Ideal Light Distance (cm)"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <InputNumber min={0} max={200} step={1} placeholder="15" style={{ width: '100%' }} />
+              </Form.Item>
+
+              <Form.Item
+                name="light_distance_tolerance_cm"
+                label="Distance Tolerance (±cm)"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <InputNumber min={0} max={50} step={1} placeholder="2" style={{ width: '100%' }} />
+              </Form.Item>
+            </Space>
+          </div>
+        </Space>
+      </Form>
     </Modal>
   );
 }
+
+// Prevent parent re-renders from remounting the modal
+const AddPlantModal = React.memo(AddPlantModalInner);
+export default AddPlantModal;
