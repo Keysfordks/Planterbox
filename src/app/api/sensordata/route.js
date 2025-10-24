@@ -215,7 +215,7 @@ export async function POST(request) {
     // Determine selection (prefer deviceId match, fallback to latest any)
     const { plant, stage, ownerId } = await getSelection(appState, deviceId);
 
-    const { deviceCommands } = await processSensorData(sensorData, plant, stage, ownerId);
+    const { deviceCommands } = await processSensorData(sensorData, plant, stage, ownerId, deviceId);
 
     return NextResponse.json(deviceCommands, { status: 200 });
   } catch (err) {
