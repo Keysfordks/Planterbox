@@ -116,12 +116,12 @@ function ArchiveCard({ item, onOpen }) {
       onClick={onOpen}
       style={{ borderRadius: 14, overflow: 'hidden' }}
       cover={
-        <div style={{ position: 'relative', height: 160, background: '#f8fafc' }}>
+        <div style={{ position: 'relative', height: 100, background: '#f8fafc' }}>
           {/* Cover image (if we later include a thumbnail in list API, swap this src) */}
           <CoverPlaceholder initials={initials(name)} />
 
           {/* Stage tag overlay */}
-          <div style={{ position: 'absolute', top: 10, right: 10 }}>
+          <div style={{ width: 220, minWidth: 220, position: 'relative' }}>
             <Tag color="blue" style={{ borderRadius: 999 }}>{stage}</Tag>
           </div>
         </div>
