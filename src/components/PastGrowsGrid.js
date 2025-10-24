@@ -1,22 +1,22 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Modal, Typography, Tag, Statistic, Row, Col, Skeleton, Empty, Space, Button } from 'antd';
-import { CalendarOutlined, LineChartOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  Card, Modal, Typography, Tag, Statistic, Row, Col, Skeleton,
+  Empty, Space, Button, Tooltip, Divider
+} from 'antd';
+import {
+  CalendarOutlined, LineChartOutlined, ReloadOutlined
+} from '@ant-design/icons';
 
 const { Title, Text } = Typography;
 
-/**
- * PastGrowsGrid
- * - Renders a grid of archived grows (GET /api/archives)
- * - Click a card to view details (snapshots + stats)
- */
 export default function PastGrowsGrid() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
-  const [active, setActive] = useState(null); // currently selected archive (full doc)
+  const [active, setActive] = useState(null);
 
   async function loadArchives({ force } = {}) {
     try {
@@ -35,10 +35,7 @@ export default function PastGrowsGrid() {
     }
   }
 
-  // Initial load
-  useEffect(() => {
-    loadArchives();
-  }, []);
+  useEffect(() => { loadArchives(); }, []);
 
   const onOpenDetails = async (id) => {
     try {
@@ -51,15 +48,13 @@ export default function PastGrowsGrid() {
     }
   };
 
-  const gridCols = useMemo(() => ({
-    xs: 1, sm: 2, md: 2, lg: 3, xl: 4, xxl: 4
-  }), []);
+  const gridCols = useMemo(() => ({ xs: 1, sm: 2, md: 2, lg: 3, xl: 4, xxl: 4 }), []);
 
   return (
-    <div style={{ padding: 16 }}>
+    <div style={{ padding: 0 }}>
       <Space align="center" style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
-        <Title level={4} style={{ margin: 0 }}>
-          <LineChartOutlined style={{ marginRight: 8 }} />
+        <Title level={4} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <LineChartOutlined />
           Past Grows
         </Title>
         <Button icon={<ReloadOutlined />} onClick={() => loadArchives({ force: true })} loading={refreshing}>
@@ -67,17 +62,15 @@ export default function PastGrowsGrid() {
         </Button>
       </Space>
 
-      {error && (
-        <div style={{ color: 'crimson', marginBottom: 12 }}>{error}</div>
-      )}
+      {error && <div style={{ color: 'crimson', marginBottom: 12 }}>{error}</div>}
 
-      {/* Loading skeletons */}
       {loading ? (
         <Row gutter={[16, 16]}>
           {Array.from({ length: 6 }).map((_, i) => (
             <Col key={i} xs={24} sm={12} md={12} lg={8} xl={6}>
-              <Card>
-                <Skeleton active avatar paragraph={{ rows: 4 }} />
+              <Card style={{ borderRadius: 14 }}>
+                <Skeleton.Image style={{ width: '100%', height: 160, marginBottom: 12, borderRadius: 10 }} />
+                <Skeleton active paragraph={{ rows: 2 }} />
               </Card>
             </Col>
           ))}
@@ -95,7 +88,7 @@ export default function PastGrowsGrid() {
       ) : (
         <Row gutter={[16, 16]}>
           {items.map((it) => (
-            <Col key={it._id} xs={24} sm={12} md={12} lg={8} xl={6}>
+            <Col key={it._id} {...gridCols}>
               <ArchiveCard item={it} onOpen={() => onOpenDetails(it._id)} />
             </Col>
           ))}
@@ -107,23 +100,13 @@ export default function PastGrowsGrid() {
   );
 }
 
-/** Single archive card */
+/* ---------- Card ---------- */
+
 function ArchiveCard({ item, onOpen }) {
-  const coverUrl = item?.snapshots ? item.snapshots : null; // in list API we projected boolean; if true, fetch detail shows real images
-  // Try to use temperature snapshot preview when you navigate into the detail modal;
-  // The list endpoint only returns a boolean flag for snapshots to keep payloads small.
-
-  const start = item?.startDate ? new Date(item.startDate) : null;
-  const end = item?.endDate ? new Date(item.endDate) : null;
-
-  const period = (
-    <Space size={6}>
-      <CalendarOutlined />
-      <Text type="secondary">
-        {start ? start.toLocaleDateString() : '—'} – {end ? end.toLocaleDateString() : '—'}
-      </Text>
-    </Space>
-  );
+  const start = toDate(item?.startDate);
+  const end = toDate(item?.endDate);
+  const stage = (item?.finalStage || '—').toLowerCase();
+  const name = niceName(item?.plantName || 'Unknown Plant');
 
   const stats = item?.stats;
 
@@ -131,34 +114,36 @@ function ArchiveCard({ item, onOpen }) {
     <Card
       hoverable
       onClick={onOpen}
+      style={{ borderRadius: 14, overflow: 'hidden' }}
       cover={
-        <div style={{ height: 160, background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {/* We don’t have the actual image data in list view; show a tasteful placeholder */}
-          <Text type="secondary" style={{ fontSize: 12 }}>Click to view snapshots</Text>
+        <div style={{ position: 'relative', height: 160, background: '#f8fafc' }}>
+          {/* Cover image (if we later include a thumbnail in list API, swap this src) */}
+          <CoverPlaceholder initials={initials(name)} />
+
+          {/* Stage tag overlay */}
+          <div style={{ position: 'absolute', top: 10, right: 10 }}>
+            <Tag color="blue" style={{ borderRadius: 999 }}>{stage}</Tag>
+          </div>
         </div>
       }
       bodyStyle={{ padding: 12 }}
     >
-      <Space direction="vertical" size={6} style={{ width: '100%' }}>
-        <Space align="baseline" style={{ justifyContent: 'space-between', width: '100%' }}>
-          <Text style={{ fontWeight: 600 }}>{item?.plantName || 'Unknown Plant'}</Text>
-          <Tag color="blue">{item?.finalStage || '—'}</Tag>
+      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+        <Text style={{ fontWeight: 600, fontSize: 16 }}>{name}</Text>
+
+        <Space size={6} style={{ color: '#6b7280' }}>
+          <CalendarOutlined />
+          <span>{fmtDate(start)} — {fmtDate(end)}</span>
         </Space>
-        {period}
+
+        <Divider style={{ margin: '8px 0' }} />
+
         {stats ? (
-          <Row gutter={8} style={{ marginTop: 8 }}>
-            <Col span={12}>
-              <MiniStat title="Temp avg" value={fmt(stats.temperature?.avg, '°C')} />
-            </Col>
-            <Col span={12}>
-              <MiniStat title="Humidity avg" value={fmt(stats.humidity?.avg, '%')} />
-            </Col>
-            <Col span={12}>
-              <MiniStat title="pH avg" value={fmt(stats.ph?.avg, '')} />
-            </Col>
-            <Col span={12}>
-              <MiniStat title="PPM avg" value={fmt(stats.ppm?.avg, '')} />
-            </Col>
+          <Row gutter={8}>
+            <Col span={12}><MiniStat title="Temp avg" value={fmt(stats.temperature?.avg, '°C')} /></Col>
+            <Col span={12}><MiniStat title="Humidity avg" value={fmt(stats.humidity?.avg, '%')} /></Col>
+            <Col span={12}><MiniStat title="pH avg" value={fmt(stats.ph?.avg, '')} /></Col>
+            <Col span={12}><MiniStat title="PPM avg" value={fmt(stats.ppm?.avg, '')} /></Col>
           </Row>
         ) : (
           <Text type="secondary" style={{ fontSize: 12 }}>No stats computed</Text>
@@ -170,29 +155,35 @@ function ArchiveCard({ item, onOpen }) {
 
 function MiniStat({ title, value }) {
   return (
-    <div style={{ background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 8, padding: 10, height: '100%' }}>
+    <div style={{
+      background: '#fafafa',
+      border: '1px solid #f0f0f0',
+      borderRadius: 10,
+      padding: 10,
+      height: '100%'
+    }}>
       <Text type="secondary" style={{ fontSize: 12 }}>{title}</Text>
-      <div style={{ fontWeight: 600, fontSize: 14 }}>{value}</div>
+      <div style={{ fontWeight: 600, fontSize: 14, marginTop: 4 }}>{value}</div>
     </div>
   );
 }
 
-/** Details modal (loads full doc including snapshots via parent) */
+/* ---------- Details Modal ---------- */
+
 function ArchiveDetailsModal({ archive, onClose }) {
   const open = Boolean(archive);
   if (!open) return null;
 
   const a = archive;
-
-  const start = a?.startDate ? new Date(a.startDate) : null;
-  const end = a?.endDate ? new Date(a.endDate) : null;
-
+  const start = toDate(a?.startDate);
+  const end = toDate(a?.endDate);
+  const name = niceName(a?.plantName || 'Archived Grow');
   const shots = a?.snapshots || {};
-  const imgStyle = { width: '100%', border: '1px solid #eee', borderRadius: 8 };
+  const imgStyle = { width: '100%', border: '1px solid #eee', borderRadius: 10 };
 
   return (
     <Modal
-      title={a?.plantName || 'Archived Grow'}
+      title={name}
       open={open}
       onCancel={onClose}
       footer={<Button onClick={onClose}>Close</Button>}
@@ -202,9 +193,9 @@ function ArchiveDetailsModal({ archive, onClose }) {
     >
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         <Space size={8} wrap>
-          <Tag color="blue">{a?.finalStage || '—'}</Tag>
+          <Tag color="blue">{(a?.finalStage || '—').toLowerCase()}</Tag>
           <Tag icon={<CalendarOutlined />} color="default">
-            {start ? start.toLocaleString() : '—'} — {end ? end.toLocaleString() : '—'}
+            {fmtDateTime(start)} — {fmtDateTime(end)}
           </Tag>
           {a?.stats?.samples != null && <Tag>Samples: {a.stats.samples}</Tag>}
         </Space>
@@ -218,15 +209,14 @@ function ArchiveDetailsModal({ archive, onClose }) {
           </Row>
         )}
 
-        {/* Snapshots */}
         {(shots.temperature || shots.humidity || shots.ppm || shots.ph) ? (
           <>
             <Title level={5} style={{ marginTop: 8 }}>Snapshots</Title>
             <Row gutter={[12, 12]}>
               {shots.temperature && <Col xs={24} md={12}><img src={shots.temperature} alt="Temperature" style={imgStyle} /></Col>}
-              {shots.humidity && <Col xs={24} md={12}><img src={shots.humidity} alt="Humidity" style={imgStyle} /></Col>}
-              {shots.ppm && <Col xs={24} md={12}><img src={shots.ppm} alt="PPM" style={imgStyle} /></Col>}
-              {shots.ph && <Col xs={24} md={12}><img src={shots.ph} alt="pH" style={imgStyle} /></Col>}
+              {shots.humidity   && <Col xs={24} md={12}><img src={shots.humidity} alt="Humidity" style={imgStyle} /></Col>}
+              {shots.ppm        && <Col xs={24} md={12}><img src={shots.ppm} alt="PPM" style={imgStyle} /></Col>}
+              {shots.ph         && <Col xs={24} md={12}><img src={shots.ph} alt="pH" style={imgStyle} /></Col>}
             </Row>
           </>
         ) : (
@@ -243,7 +233,7 @@ function StatBlock({ title, stat, fmtUnit }) {
   const avg = fmt(stat?.avg, fmtUnit);
 
   return (
-    <div style={{ background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 8, padding: 12 }}>
+    <div style={{ background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 10, padding: 12 }}>
       <Text type="secondary">{title}</Text>
       <Row gutter={8} style={{ marginTop: 6 }}>
         <Col span={8}><Statistic title="Min" value={min} valueStyle={{ fontSize: 16 }} /></Col>
@@ -254,10 +244,60 @@ function StatBlock({ title, stat, fmtUnit }) {
   );
 }
 
-/* helpers */
+/* ---------- Small helpers ---------- */
+
 function fmt(v, unit) {
   if (v == null || Number.isNaN(v)) return '—';
   const n = typeof v === 'number' ? v : Number(v);
   const s = Number.isInteger(n) ? String(n) : n.toFixed(2);
   return unit ? `${s} ${unit}` : s;
+}
+
+function toDate(d) {
+  try { return d ? new Date(d) : null; } catch { return null; }
+}
+function fmtDate(d) {
+  return d ? d.toLocaleDateString() : '—';
+}
+function fmtDateTime(d) {
+  return d ? d.toLocaleString() : '—';
+}
+function niceName(s) {
+  if (!s) return '';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+function initials(name) {
+  const parts = String(name).trim().split(/\s+/);
+  return (parts[0]?.[0] || '').toUpperCase() + (parts[1]?.[0] || '').toUpperCase();
+}
+
+function CoverPlaceholder({ initials }) {
+  // soft gradient with centered initials/icon
+  return (
+    <div
+      style={{
+        height: '100%',
+        width: '100%',
+        display: 'grid',
+        placeItems: 'center',
+        background:
+          'linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(59,130,246,0.15) 100%)'
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '6px 10px',
+          background: 'rgba(255,255,255,0.75)',
+          border: '1px solid rgba(0,0,0,0.06)',
+          borderRadius: 999
+        }}
+      >
+        <LineChartOutlined />
+        <Text type="secondary" style={{ fontSize: 12 }}>Click to view snapshots</Text>
+      </div>
+    </div>
+  );
 }
