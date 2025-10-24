@@ -1,10 +1,3 @@
-// ===============================
-//  ESP32 Hydroponics Controller
-//  - Local 2-minute global lockout after any pump starts
-//  - Exception: PPM A→B runs as a single sequence (lockout covers the whole sequence + post-B 2 min)
-//  - Reads server 'lockout_ms' hint but works with a safe default if missing
-//  - Smooth daylight PWM is computed on the server; we just set the PWM value we receive
-// ===============================
 
 #include <Arduino.h>
 #include <WiFi.h>
