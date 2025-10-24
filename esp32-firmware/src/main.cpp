@@ -10,13 +10,11 @@
 const char* ssid = "SockMnky";
 const char* password = "04072024";
 
-// !!! CRITICAL FIX: Use the hostname and path for a robust connection !!!
 
-// 1. HOSTNAME: Use ONLY the domain name (no https:// or /api/sensordata)
+
+
 const char* HOSTNAME = "planterbox-orcin.vercel.app"; 
-// 2. PORT: HTTPS standard port
 const int HTTPS_PORT = 443;
-// 3. API PATH: The rest of the URL
 const char* API_PATH = "/api/sensordata"; 
 
 
@@ -31,7 +29,7 @@ const char* API_PATH = "/api/sensordata";
 #define PH_SENSOR_PIN 39
 
 #define WATER_SENSOR_PIN 32
-const int WATER_THRESHOLD = 680;
+const int WATER_THRESHOLD = 730;
 
 #define LIGHT_PIN 15
 
