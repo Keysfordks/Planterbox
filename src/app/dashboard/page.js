@@ -292,7 +292,7 @@ export default function DashboardPage() {
             ph_max: 6.5,
             ppm_min: 800,
             ppm_max: 1200,
-            light_pwm_cycle: 75,
+            light_pwm_cycle: 12,
             dropdownStage: "seedling",
           }}
         >
