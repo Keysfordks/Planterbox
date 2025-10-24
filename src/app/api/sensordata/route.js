@@ -89,13 +89,24 @@ async function getHistoricalData(db, deviceId, ownerId, plant, stage, selectionS
   };
 }
 
+/** Convenience: return the JSON your device expects when not recording */
+function safeDeviceDefaults() {
+  return {
+    light: 0,
+    light_hours_per_day: 0,
+    ph_up_pump: false,
+    ph_down_pump: false,
+    ppm_a_pump: false,
+    ppm_b_pump: false
+  };
+}
+
 export async function POST(request) {
   try {
     const client = await clientPromise;
     const db = client.db("planterbox");
     const appState = db.collection("app_state");
     const archives = db.collection("archives");
-    const plantProfileCollection = db.collection("plant_profiles"); // used by archive path if needed
 
     const session = await auth().catch(() => null);
     const authUserId = session?.user?.id;
@@ -103,6 +114,7 @@ export async function POST(request) {
     const body = await request.json();
     const action = body?.action;
 
+    // ---------- SELECT PLANT ----------
     if (action === "select_plant") {
       if (!authUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       const { selectedPlant, selectedStage } = body || {};
@@ -117,31 +129,86 @@ export async function POST(request) {
       return NextResponse.json({ ok: true }, { status: 200 });
     }
 
+    // ---------- ABORT PLANT ----------
     if (action === "abort_plant") {
       if (!authUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+      // Optional snapshots passed from client (HistoricalCharts)
+      const snapshots = body?.snapshots ?? null;
+
+      // Current selection for this user (to archive)
       const selection = await appState.findOne({ state_name: "plantSelection", userId: authUserId });
+
       if (selection?.value?.plant && selection?.value?.stage) {
-        // Optional: write an archive entry
+        // Compute simple stats from sensordata for the (default) device
+        const deviceIdToClear = body?.deviceId || "default_device";
+        const sens = db.collection("sensordata");
+
+        // Stats computing helper
+        async function summarizeMetric(field) {
+          const pipe = [
+            { $match: { userId: deviceIdToClear } },
+            { $addFields: { ts: { $toDate: "$timestamp" } } },
+            ...(selection?.value?.timestamp ? [{ $match: { ts: { $gte: new Date(selection.value.timestamp) } } }] : []),
+            { $group: { _id: null, min: { $min: `$${field}` }, max: { $max: `$${field}` }, avg: { $avg: `$${field}` }, count: { $sum: 1 } } }
+          ];
+          const res = await sens.aggregate(pipe).toArray();
+          const r = res?.[0];
+          return r ? { min: r.min ?? null, max: r.max ?? null, avg: r.avg ?? null, samples: r.count ?? 0 } : null;
+        }
+
+        const [t, h, pH, ppm] = await Promise.all([
+          summarizeMetric("temperature"),
+          summarizeMetric("humidity"),
+          summarizeMetric("ph"),
+          summarizeMetric("ppm")
+        ]);
+
+        const samplesCount = Math.max(t?.samples || 0, h?.samples || 0, pH?.samples || 0, ppm?.samples || 0);
+
         await archives.insertOne({
           userId: authUserId,
           plantName: selection.value.plant,
           finalStage: selection.value.stage,
           startDate: selection.value.timestamp ?? null,
-          endDate: new Date().toISOString()
+          endDate: new Date().toISOString(),
+          stats: {
+            temperature: t ? { min: t.min, max: t.max, avg: t.avg } : null,
+            humidity:    h ? { min: h.min, max: h.max, avg: h.avg } : null,
+            ph:          pH ? { min: pH.min, max: pH.max, avg: pH.avg } : null,
+            ppm:         ppm ? { min: ppm.min, max: ppm.max, avg: ppm.avg } : null,
+            samples: samplesCount
+          },
+          snapshots: snapshots || null
         });
       }
 
+      // Remove selection
       await appState.deleteOne({ state_name: "plantSelection", userId: authUserId });
+
+      // NEW: clear sensordata for the device so the next plant starts fresh
+      const deviceIdToClear = body?.deviceId || "default_device";
+      await db.collection("sensordata").deleteMany({ userId: deviceIdToClear });
+
       return NextResponse.json({ ok: true }, { status: 200 });
     }
 
-    // Device upload: store sample + compute commands
-    const deviceId = body.deviceId || "default_device";
+    // ---------- DEVICE UPLOAD ----------
+    // Only save samples if there is a REAL active selection in app_state.
+    // (Prevents populating sensordata when no plant is selected.)
+    const deviceId = body?.deviceId || "default_device";
+    const activeSelectionDoc = await appState.findOne({ state_name: "plantSelection" });
+
+    if (!activeSelectionDoc?.value?.plant || !activeSelectionDoc?.value?.stage) {
+      // No active selection anywhere -> do not store; return safe defaults
+      return NextResponse.json(safeDeviceDefaults(), { status: 200 });
+    }
+
+    // If we do have a real selection, store the sample and compute commands.
     const sensorData = {
       ...body,
       userId: deviceId, // namespace by device ID
-      timestamp: body.timestamp ? new Date(body.timestamp) : new Date() // store as Date going forward
+      timestamp: body.timestamp ? new Date(body.timestamp) : new Date() // store as Date
     };
     await saveSensor(db, sensorData);
 
@@ -154,10 +221,7 @@ export async function POST(request) {
   } catch (err) {
     console.error("POST /api/sensordata error:", err);
     // Safe defaults
-    return NextResponse.json(
-      { light: 0, light_hours_per_day: 0, ph_up_pump: false, ph_down_pump: false, ppm_a_pump: false, ppm_b_pump: false },
-      { status: 200 }
-    );
+    return NextResponse.json(safeDeviceDefaults(), { status: 200 });
   }
 }
 
@@ -249,14 +313,7 @@ export async function GET(request) {
     }
 
     let computed = {
-      deviceCommands: {
-        light: 0,
-        light_hours_per_day: 0,
-        ph_up_pump: false,
-        ph_down_pump: false,
-        ppm_a_pump: false,
-        ppm_b_pump: false
-      },
+      deviceCommands: safeDeviceDefaults(),
       sensorStatus: {
         temperature: "UNKNOWN",
         humidity: "UNKNOWN",
@@ -308,14 +365,7 @@ export async function GET(request) {
           ph: "UNKNOWN",
           ppm: "UNKNOWN"
         },
-        deviceCommands: {
-          light: 0,
-          light_hours_per_day: 0,
-          ph_up_pump: false,
-          ph_down_pump: false,
-          ppm_a_pump: false,
-          ppm_b_pump: false
-        },
+        deviceCommands: safeDeviceDefaults(),
         idealConditions: null,
         idealForUI: null,
         currentSelection: { plant: "default", stage: "seedling", deviceId: "default_device" }
