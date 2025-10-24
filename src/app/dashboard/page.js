@@ -52,17 +52,7 @@ export default function DashboardPage() {
   const [availablePresets, setAvailablePresets] = useState([]);
   const [selectedPreset, setSelectedPreset] = useState(null);
   const [isCustomPlant, setIsCustomPlant] = useState(false);
-  const [customIdealConditions, setCustomIdealConditions] = useState({
-    temp_min: 20,
-    temp_max: 26,
-    humidity_min: 50,
-    humidity_max: 70,
-    ph_min: 5.5,
-    ph_max: 6.5,
-    ppm_min: 800,
-    ppm_max: 1200,
-    light_pwm_cycle: 75,
-  });
+  // customIdealConditions state removed and managed by Antd Form
   const [form] = Form.useForm();
 
   // Fetch plant presets
@@ -131,7 +121,18 @@ export default function DashboardPage() {
 
       let idealConditionsToUse;
       if (isCustomPlant) {
-        idealConditionsToUse = customIdealConditions;
+        // Now retrieving all custom fields directly from validated form values
+        idealConditionsToUse = {
+          temp_min: values.temp_min,
+          temp_max: values.temp_max,
+          humidity_min: values.humidity_min,
+          humidity_max: values.humidity_max,
+          ph_min: values.ph_min,
+          ph_max: values.ph_max,
+          ppm_min: values.ppm_min,
+          ppm_max: values.ppm_max,
+          light_pwm_cycle: values.light_pwm_cycle,
+        };
       } else {
         if (!selectedPreset) {
           message.error("Please select a plant type");
@@ -169,7 +170,8 @@ export default function DashboardPage() {
       message.success(`${values.customPlantName} created successfully!`);
     } catch (error) {
       console.error("Error creating plant:", error);
-      message.error("Please fill in all required fields or check custom values");
+      // Removed the alert about checking custom values as they are now required fields in the form
+      message.error("Please fill in all required fields");
     }
   };
 
@@ -276,7 +278,24 @@ export default function DashboardPage() {
           Choose a plant preset or create a custom configuration.
         </Paragraph>
 
-        <Form form={form} layout="vertical" style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}>
+        <Form 
+          form={form} 
+          layout="vertical" 
+          style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}
+          // Set initial values for form fields, including custom ones
+          initialValues={{
+            temp_min: 20,
+            temp_max: 26,
+            humidity_min: 50,
+            humidity_max: 70,
+            ph_min: 5.5,
+            ph_max: 6.5,
+            ppm_min: 800,
+            ppm_max: 1200,
+            light_pwm_cycle: 75,
+            dropdownStage: "seedling",
+          }}
+        >
           <Form.Item
             name="customPlantName"
             label={<Text strong>Plant Name</Text>}
@@ -324,22 +343,28 @@ export default function DashboardPage() {
               <Title level={5}>Temperature Range (°C)</Title>
               <Row gutter={16}>
                 <Col span={12}>
-                  <Form.Item label="Minimum">
+                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
+                  <Form.Item 
+                    label="Minimum" 
+                    name="temp_min"
+                    rules={[{ required: true, message: 'Required' }]}
+                  >
                     <InputNumber
                       style={{ width: "100%" }}
-                      value={customIdealConditions.temp_min}
-                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, temp_min: v }))}
                       min={10}
                       max={40}
                     />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item label="Maximum">
+                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
+                  <Form.Item 
+                    label="Maximum" 
+                    name="temp_max"
+                    rules={[{ required: true, message: 'Required' }]}
+                  >
                     <InputNumber
                       style={{ width: "100%" }}
-                      value={customIdealConditions.temp_max}
-                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, temp_max: v }))}
                       min={10}
                       max={40}
                     />
@@ -350,22 +375,28 @@ export default function DashboardPage() {
               <Title level={5}>Humidity Range (%)</Title>
               <Row gutter={16}>
                 <Col span={12}>
-                  <Form.Item label="Minimum">
+                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
+                  <Form.Item 
+                    label="Minimum" 
+                    name="humidity_min"
+                    rules={[{ required: true, message: 'Required' }]}
+                  >
                     <InputNumber
                       style={{ width: "100%" }}
-                      value={customIdealConditions.humidity_min}
-                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, humidity_min: v }))}
                       min={0}
                       max={100}
                     />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item label="Maximum">
+                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
+                  <Form.Item 
+                    label="Maximum" 
+                    name="humidity_max"
+                    rules={[{ required: true, message: 'Required' }]}
+                  >
                     <InputNumber
                       style={{ width: "100%" }}
-                      value={customIdealConditions.humidity_max}
-                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, humidity_max: v }))}
                       min={0}
                       max={100}
                     />
@@ -376,11 +407,14 @@ export default function DashboardPage() {
               <Title level={5}>pH Range</Title>
               <Row gutter={16}>
                 <Col span={12}>
-                  <Form.Item label="Minimum">
+                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
+                  <Form.Item 
+                    label="Minimum" 
+                    name="ph_min"
+                    rules={[{ required: true, message: 'Required' }]}
+                  >
                     <InputNumber
                       style={{ width: "100%" }}
-                      value={customIdealConditions.ph_min}
-                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, ph_min: v }))}
                       min={0}
                       max={14}
                       step={0.1}
@@ -388,11 +422,14 @@ export default function DashboardPage() {
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item label="Maximum">
+                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
+                  <Form.Item 
+                    label="Maximum" 
+                    name="ph_max"
+                    rules={[{ required: true, message: 'Required' }]}
+                  >
                     <InputNumber
                       style={{ width: "100%" }}
-                      value={customIdealConditions.ph_max}
-                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, ph_max: v }))}
                       min={0}
                       max={14}
                       step={0.1}
@@ -404,22 +441,28 @@ export default function DashboardPage() {
               <Title level={5}>PPM Range (Nutrients)</Title>
               <Row gutter={16}>
                 <Col span={12}>
-                  <Form.Item label="Minimum">
+                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
+                  <Form.Item 
+                    label="Minimum" 
+                    name="ppm_min"
+                    rules={[{ required: true, message: 'Required' }]}
+                  >
                     <InputNumber
                       style={{ width: "100%" }}
-                      value={customIdealConditions.ppm_min}
-                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, ppm_min: v }))}
                       min={0}
                       max={5000}
                     />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  <Form.Item label="Maximum">
+                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
+                  <Form.Item 
+                    label="Maximum" 
+                    name="ppm_max"
+                    rules={[{ required: true, message: 'Required' }]}
+                  >
                     <InputNumber
                       style={{ width: "100%" }}
-                      value={customIdealConditions.ppm_max}
-                      onChange={(v) => setCustomIdealConditions((s) => ({ ...s, ppm_max: v }))}
                       min={0}
                       max={5000}
                     />
@@ -428,11 +471,13 @@ export default function DashboardPage() {
               </Row>
 
               <Title level={5}>Light PWM Cycle (%)</Title>
-              <Form.Item>
+              {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
+              <Form.Item 
+                name="light_pwm_cycle"
+                rules={[{ required: true, message: 'Required' }]}
+              >
                 <InputNumber
                   style={{ width: "100%" }}
-                  value={customIdealConditions.light_pwm_cycle}
-                  onChange={(v) => setCustomIdealConditions((s) => ({ ...s, light_pwm_cycle: v }))}
                   min={0}
                   max={100}
                 />
@@ -460,11 +505,11 @@ export default function DashboardPage() {
                 </Tooltip>
               </Text>
             }
+            name="dropdownStage" // Form manages the value of the Select
           >
             <Select
               size="large"
-              value={dropdownStage}
-              onChange={(value) => setDropdownStage(value)}
+              onChange={(value) => setDropdownStage(value)} // Still need this for external state sync/submission
               style={{ width: "100%" }}
             >
               {GROWTH_STAGES.map((stage) => (
