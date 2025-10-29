@@ -114,7 +114,8 @@ export default function DashboardPage() {
     return () => clearInterval(intervalId);
   }, [selectedPlant, selectedStage]);
 
-    useEffect(() => {
+  // Debug: log modal open prop changes
+  useEffect(() => {
     console.log('showGraphModal ->', showGraphModal, 'at', new Date().toLocaleTimeString());
   }, [showGraphModal]);
 
@@ -232,249 +233,6 @@ export default function DashboardPage() {
   };
 
   const openHistoricalGraph = () => setShowGraphModal(true);
-
-  // Charts modal (keeps DOM mounted; no flicker)
-  const ChartModal = () => (
-        <Modal
-      open={showGraphModal}
-      onCancel={() => setShowGraphModal(false)}
-      footer={null}
-      width="90%"
-      centered
-      closable
-      maskClosable
-      // keep content mounted entirely:
-      destroyOnClose={false}
-      forceRender
-      // render inline to avoid portal re-insertions:
-      getContainer={false}
-      // disable all entrance/exit animations so nothing "re-opens":
-      transitionName=""
-      maskTransitionName=""
-      // minor cosmetics
-      style={{ top: 20 }}
-      bodyStyle={{ padding: 0 }}
-    >
-      {/* Hard visibility toggle: DOM always present; just hidden when closed */}
-      <div style={{ display: showGraphModal ? 'block' : 'none' }}>
-        <HistoricalCharts ref={chartsRef} show={showGraphModal} />
-      </div>
-    </Modal>
-  );
-
-  // Create Plant modal
-  const PlantCreationModal = () => (
-    <Modal
-      open={showPlantModal}
-      onCancel={() => {
-        setShowPlantModal(false);
-        setIsCustomPlant(false);
-        form.resetFields();
-      }}
-      footer={null}
-      width={700}
-      centered
-      closable
-      maskClosable
-      destroyOnClose={false}
-    >
-      <div style={{ textAlign: "center", padding: "20px 0" }}>
-        <Title level={2} style={{ marginBottom: "8px" }}>
-          🌱 Create Your Plant
-        </Title>
-
-        <Paragraph style={{ fontSize: "16px", color: "#6b7280", marginBottom: "32px" }}>
-          Choose a plant preset or create a custom configuration.
-        </Paragraph>
-
-        <Form 
-          form={form} 
-          layout="vertical" 
-          style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}
-          initialValues={{
-            temp_min: 20,
-            temp_max: 26,
-            humidity_min: 50,
-            humidity_max: 70,
-            ph_min: 5.5,
-            ph_max: 6.5,
-            ppm_min: 800,
-            ppm_max: 1200,
-            light_pwm_cycle: 12,
-            dropdownStage: "seedling",
-          }}
-        >
-          <Form.Item
-            name="customPlantName"
-            label={<Text strong>Plant Name</Text>}
-            rules={[{ required: true, message: "Please enter a name for your plant" }]}
-          >
-            <Input size="large" placeholder="e.g., My Pothos Plant" />
-          </Form.Item>
-
-          <Form.Item label={<Text strong>Configuration Type</Text>} required>
-            <Select
-              size="large"
-              placeholder="Choose preset or custom"
-              value={isCustomPlant ? "custom" : selectedPreset?.plant_name}
-              onChange={(value) => {
-                if (value === "custom") {
-                  setIsCustomPlant(true);
-                  setSelectedPreset(null);
-                } else {
-                  setIsCustomPlant(false);
-                  const preset = availablePresets.find((p) => p.plant_name === value);
-                  setSelectedPreset(preset);
-                }
-              }}
-              style={{ width: "100%" }}
-            >
-              {availablePresets.map((preset) => (
-                <Option key={preset._id} value={preset.plant_name}>
-                  {preset.plant_name.charAt(0).toUpperCase() + preset.plant_name.slice(1)}
-                </Option>
-              ))}
-              <Option value="custom">Custom Configuration</Option>
-            </Select>
-          </Form.Item>
-
-          {isCustomPlant && (
-            <>
-              <Alert
-                message="Custom Plant Configuration"
-                description="Set your ideal environmental ranges for optimal growth. The system will alert you when values fall outside these ranges."
-                type="info"
-                showIcon
-                style={{ marginBottom: "16px" }}
-              />
-
-              <Title level={5}>Temperature Range (°C)</Title>
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item label="Minimum" name="temp_min" rules={[{ required: true, message: 'Required' }]}>
-                    <InputNumber style={{ width: "100%" }} min={10} max={40} />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item label="Maximum" name="temp_max" rules={[{ required: true, message: 'Required' }]}>
-                    <InputNumber style={{ width: "100%" }} min={10} max={40} />
-                  </Form.Item>
-                </Col>
-              </Row>
-
-              <Title level={5}>Humidity Range (%)</Title>
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item label="Minimum" name="humidity_min" rules={[{ required: true, message: 'Required' }]}>
-                    <InputNumber style={{ width: "100%" }} min={0} max={100} />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item label="Maximum" name="humidity_max" rules={[{ required: true, message: 'Required' }]}>
-                    <InputNumber style={{ width: "100%" }} min={0} max={100} />
-                  </Form.Item>
-                </Col>
-              </Row>
-
-              <Title level={5}>pH Range</Title>
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item label="Minimum" name="ph_min" rules={[{ required: true, message: 'Required' }]}>
-                    <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item label="Maximum" name="ph_max" rules={[{ required: true, message: 'Required' }]}>
-                    <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
-                  </Form.Item>
-                </Col>
-              </Row>
-
-              <Title level={5}>PPM Range (Nutrients)</Title>
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item label="Minimum" name="ppm_min" rules={[{ required: true, message: 'Required' }]}>
-                    <InputNumber style={{ width: "100%" }} min={0} max={5000} />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item label="Maximum" name="ppm_max" rules={[{ required: true, message: 'Required' }]}>
-                    <InputNumber style={{ width: "100%" }} min={0} max={5000} />
-                  </Form.Item>
-                </Col>
-              </Row>
-
-              <Title level={5}>Light PWM Cycle (Hrs/Day)</Title>
-              <Form.Item name="light_pwm_cycle" rules={[{ required: true, message: 'Required' }]}>
-                <InputNumber style={{ width: "100%" }} min={0} max={100} />
-              </Form.Item>
-            </>
-          )}
-
-          <Form.Item
-            label={
-              <Text strong style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                Growth Stage
-                <Tooltip
-                  title="Our kit groups plant growth into 3 broad stages. Click to learn more."
-                  placement="right"
-                >
-                  <a
-                    href="https://www.saferbrand.com/articles/plant-growth-stages"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: "#10b981" }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <FaInfoCircle />
-                  </a>
-                </Tooltip>
-              </Text>
-            }
-            name="dropdownStage"
-          >
-            <Select size="large" onChange={(value) => setDropdownStage(value)} style={{ width: "100%" }}>
-              {GROWTH_STAGES.map((stage) => (
-                <Option key={stage} value={stage}>
-                  {stage.charAt(0).toUpperCase() + stage.slice(1)} Stage
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          {!isCustomPlant && (
-            <>
-              <Divider style={{ margin: "16px 0" }} />
-              <Alert
-                message="Setup Instructions"
-                description="Fill the tank to the marked range with distilled water before starting. Add water as needed."
-                type="info"
-                showIcon
-                style={{ marginBottom: "16px" }}
-              />
-            </>
-          )}
-
-          <Button
-            type="primary"
-            size="large"
-            onClick={handleCreatePlant}
-            block
-            style={{
-              height: "48px",
-              fontSize: "16px",
-              fontWeight: "bold",
-              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-              border: "none",
-              marginTop: "16px",
-            }}
-          >
-            Create & Start Monitoring
-          </Button>
-        </Form>
-      </div>
-    </Modal>
-  );
 
   if (status === "loading") {
     return (
@@ -698,11 +456,243 @@ export default function DashboardPage() {
           </Paragraph>
           <PastGrowsGrid />
         </div>
-
-        {/* Modals */}
-        <ChartModal />
-        <PlantCreationModal />
       </main>
+
+      {/* ===================== INLINE MODALS (no inner components) ===================== */}
+
+      {/* Historical Graphs Modal — keep DOM mounted, disable transitions */}
+      <Modal
+        open={showGraphModal}
+        onCancel={() => setShowGraphModal(false)}
+        footer={null}
+        width="90%"
+        centered
+        closable
+        maskClosable
+        destroyOnClose={false}   // keep children mounted
+        forceRender              // pre-mount content
+        transitionName=""        // disable enter/leave animations
+        maskTransitionName=""
+        style={{ top: 20 }}
+        bodyStyle={{ padding: 0 }}
+      >
+        {/* DOM always present; just visually toggle */}
+        <div style={{ display: showGraphModal ? 'block' : 'none' }}>
+          <HistoricalCharts ref={chartsRef} show={showGraphModal} />
+        </div>
+      </Modal>
+
+      {/* Plant Creation Modal */}
+      <Modal
+        open={showPlantModal}
+        onCancel={() => {
+          setShowPlantModal(false);
+          setIsCustomPlant(false);
+          form.resetFields();
+        }}
+        footer={null}
+        width={700}
+        centered
+        closable
+        maskClosable
+        destroyOnClose={false}
+      >
+        <div style={{ textAlign: "center", padding: "20px 0" }}>
+          <Title level={2} style={{ marginBottom: "8px" }}>
+            🌱 Create Your Plant
+          </Title>
+
+          <Paragraph style={{ fontSize: "16px", color: "#6b7280", marginBottom: "32px" }}>
+            Choose a plant preset or create a custom configuration.
+          </Paragraph>
+
+          <Form
+            form={form}
+            layout="vertical"
+            style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}
+            initialValues={{
+              temp_min: 20,
+              temp_max: 26,
+              humidity_min: 50,
+              humidity_max: 70,
+              ph_min: 5.5,
+              ph_max: 6.5,
+              ppm_min: 800,
+              ppm_max: 1200,
+              light_pwm_cycle: 12,
+              dropdownStage: "seedling",
+            }}
+          >
+            <Form.Item
+              name="customPlantName"
+              label={<Text strong>Plant Name</Text>}
+              rules={[{ required: true, message: "Please enter a name for your plant" }]}
+            >
+              <Input size="large" placeholder="e.g., My Pothos Plant" />
+            </Form.Item>
+
+            <Form.Item label={<Text strong>Configuration Type</Text>} required>
+              <Select
+                size="large"
+                placeholder="Choose preset or custom"
+                value={isCustomPlant ? "custom" : selectedPreset?.plant_name}
+                onChange={(value) => {
+                  if (value === "custom") {
+                    setIsCustomPlant(true);
+                    setSelectedPreset(null);
+                  } else {
+                    setIsCustomPlant(false);
+                    const preset = availablePresets.find((p) => p.plant_name === value);
+                    setSelectedPreset(preset);
+                  }
+                }}
+                style={{ width: "100%" }}
+              >
+                {availablePresets.map((preset) => (
+                  <Option key={preset._id} value={preset.plant_name}>
+                    {preset.plant_name.charAt(0).toUpperCase() + preset.plant_name.slice(1)}
+                  </Option>
+                ))}
+                <Option value="custom">Custom Configuration</Option>
+              </Select>
+            </Form.Item>
+
+            {isCustomPlant && (
+              <>
+                <Alert
+                  message="Custom Plant Configuration"
+                  description="Set your ideal environmental ranges for optimal growth. The system will alert you when values fall outside these ranges."
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: "16px" }}
+                />
+
+                <Title level={5}>Temperature Range (°C)</Title>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Minimum" name="temp_min" rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={10} max={40} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Maximum" name="temp_max" rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={10} max={40} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <Title level={5}>Humidity Range (%)</Title>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Minimum" name="humidity_min" rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={100} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Maximum" name="humidity_max" rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={100} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <Title level={5}>pH Range</Title>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Minimum" name="ph_min" rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Maximum" name="ph_max" rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <Title level={5}>PPM Range (Nutrients)</Title>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Minimum" name="ppm_min" rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={5000} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Maximum" name="ppm_max" rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={5000} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+
+                <Title level={5}>Light PWM Cycle (Hrs/Day)</Title>
+                <Form.Item name="light_pwm_cycle" rules={[{ required: true, message: 'Required' }]}>
+                  <InputNumber style={{ width: "100%" }} min={0} max={100} />
+                </Form.Item>
+              </>
+            )}
+
+            <Form.Item
+              label={
+                <Text strong style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  Growth Stage
+                  <Tooltip
+                    title="Our kit groups plant growth into 3 broad stages. Click to learn more."
+                    placement="right"
+                  >
+                    <a
+                      href="https://www.saferbrand.com/articles/plant-growth-stages"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "#10b981" }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <FaInfoCircle />
+                    </a>
+                  </Tooltip>
+                </Text>
+              }
+              name="dropdownStage"
+            >
+              <Select size="large" onChange={(value) => setDropdownStage(value)} style={{ width: "100%" }}>
+                {GROWTH_STAGES.map((stage) => (
+                  <Option key={stage} value={stage}>
+                    {stage.charAt(0).toUpperCase() + stage.slice(1)} Stage
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            {!isCustomPlant && (
+              <>
+                <Divider style={{ margin: "16px 0" }} />
+                <Alert
+                  message="Setup Instructions"
+                  description="Fill the tank to the marked range with distilled water before starting. Add water as needed."
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: "16px" }}
+                />
+              </>
+            )}
+
+            <Button
+              type="primary"
+              size="large"
+              onClick={handleCreatePlant}
+              block
+              style={{
+                height: "48px",
+                fontSize: "16px",
+                fontWeight: "bold",
+                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                border: "none",
+                marginTop: "16px",
+              }}
+            >
+              Create & Start Monitoring
+            </Button>
+          </Form>
+        </div>
+      </Modal>
     </div>
   );
 }
