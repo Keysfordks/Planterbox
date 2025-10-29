@@ -7,8 +7,8 @@
 #include <ArduinoJson.h>
 
 // -------- WiFi & API --------
-const char* ssid 	 = "Jonathan";
-const char* password = "eeeeeeee";
+const char* ssid 	 = "SockMnky";
+const char* password = "04072024";
 
 // Use hostname + path (no "https://" in HOSTNAME)
 const char* HOSTNAME 	= "planterbox-orcin.vercel.app";

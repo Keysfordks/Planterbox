@@ -38,7 +38,7 @@ ChartJS.register(
  *    - Avoiding state updates if incoming data hasn't changed (signature compare)
  *    - Keeping Chart.js datasets stable and updating without animations
  */
-const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
+const HistoricalCharts = forwardRef(function HistoricalCharts({ show, live = true, pollMs = 3000, showSkeletonOnFirstLoad = false }, ref) {
   const [payload, setPayload] = useState(null);     // last good data
   const [error, setError] = useState(null);
   const [isFetching, setIsFetching] = useState(false);
@@ -116,13 +116,15 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
   useEffect(() => {
     if (!show) return;
     loadGrowth();
-    return () => { if (abortRef.current) abortRef.current.abort(); };
-  }, [show]);
+    if (!live) return () => { if (abortRef.current) abortRef.current.abort(); };
+    const id = setInterval(() => { loadGrowth(); }, Math.max(1000, pollMs));
+    return () => { clearInterval(id); if (abortRef.current) abortRef.current.abort(); };
+  }, [show, live, pollMs]);
 
   const rows = payload?.historicalData ?? [];
   const ideals = payload?.idealConditions ?? null;
   const hasData = rows.length > 0;
-  const isInitialLoading = !hasLoadedOnceRef.current;
+  const isInitialLoading = showSkeletonOnFirstLoad && !hasLoadedOnceRef.current;
 
   const timeUnit = useMemo(() => {
     if (!hasData) return 'hour';
@@ -241,7 +243,7 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
   );
 });
 
-export default HistoricalCharts;
+export default React.memo(HistoricalCharts);
 
 /** One chart with an ideal-range green band + CURRENT value line (dashed) */
 function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, timeUnit }) {
