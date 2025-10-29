@@ -458,30 +458,58 @@ export default function DashboardPage() {
         </div>
       </main>
 
-      {/* ===================== INLINE MODALS (no inner components) ===================== */}
-
-      {/* Historical Graphs Modal — keep DOM mounted, disable transitions */}
-      <Modal
-        open={showGraphModal}
-        onCancel={() => setShowGraphModal(false)}
-        footer={null}
-        width="90%"
-        centered
-        closable
-        maskClosable
-        destroyOnClose={false}   // keep children mounted
-        forceRender              // pre-mount content
-        transitionName=""        // disable enter/leave animations
-        maskTransitionName=""
-        style={{ top: 20 }}
-        bodyStyle={{ padding: 0 }}
+      {/* === Persistent Graph Overlay (no unmounts) === */}
+      <div
+        id="graph-overlay"
+        aria-hidden={showGraphModal ? "false" : "true"}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setShowGraphModal(false); // click backdrop closes
+        }}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          display: showGraphModal ? 'flex' : 'none', // ⚠️ never unmounts, only hides
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(0,0,0,0.45)',
+          zIndex: 9999,
+          padding: '24px',
+        }}
       >
-        {/* DOM always present; just visually toggle */}
-        <div style={{ display: showGraphModal ? 'block' : 'none' }}>
-          <HistoricalCharts ref={chartsRef} show={showGraphModal} />
-        </div>
-      </Modal>
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            width: 'min(1200px, 92vw)',
+            maxHeight: '88vh',
+            background: '#fff',
+            borderRadius: 12,
+            boxShadow: '0 10px 40px rgba(0,0,0,0.25)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+          onClick={(e) => e.stopPropagation()} // prevent closing when clicking inside
+        >
+          {/* Header */}
+          <div style={{
+            padding: '12px 16px',
+            borderBottom: '1px solid #e5e7eb',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <span style={{ fontWeight: 600 }}>Historical Growth</span>
+            <Button onClick={() => setShowGraphModal(false)}>Close</Button>
+          </div>
 
+          {/* Content: charts remain mounted forever */}
+          <div style={{ padding: 12, overflow: 'auto', flex: 1 }}>
+            <HistoricalCharts ref={chartsRef} show={showGraphModal} />
+          </div>
+        </div>
+      </div>
+      
       {/* Plant Creation Modal */}
       <Modal
         open={showPlantModal}
