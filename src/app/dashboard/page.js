@@ -96,6 +96,13 @@ export default function DashboardPage() {
       }
     };
 
+    useEffect(() => {
+      console.log('showGraphModal ->', showGraphModal, 'at', new Date().toLocaleTimeString());
+    }, [showGraphModal]);
+
+
+    
+
     const fetchData = async () => {
       try {
         const res = await fetch("/api/sensordata");
