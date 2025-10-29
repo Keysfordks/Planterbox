@@ -267,9 +267,15 @@ function pushSeries(ref, rows, field, unit, idealMin, idealMax) {
       data: [],
       parsing: false,
       spanGaps: true,
-      _unit: unit,          // used in tooltip
-      fill: false
-    }];
+      _unit: unit,
+      fill: false,
+      borderColor: '#111',         // dark black line
+      backgroundColor: '#111',     // used for points if ever shown
+      borderWidth: 3,
+      tension: 0.25,
+      shadowBlur: 6,
+      shadowColor: 'rgba(0,0,0,0.4)'
+}];
   }
 
   // Update data in place
