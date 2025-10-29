@@ -231,7 +231,7 @@ export default function DashboardPage() {
 
   // Charts modal (keeps DOM mounted; no flicker)
   const ChartModal = () => (
-    <Modal
+        <Modal
       open={showGraphModal}
       onCancel={() => setShowGraphModal(false)}
       footer={null}
@@ -239,12 +239,22 @@ export default function DashboardPage() {
       centered
       closable
       maskClosable
-      destroyOnClose={false}   // keep children mounted when closed
-      forceRender              // pre-mount content to prevent portal/transition blink
+      // keep content mounted entirely:
+      destroyOnClose={false}
+      forceRender
+      // render inline to avoid portal re-insertions:
+      getContainer={false}
+      // disable all entrance/exit animations so nothing "re-opens":
+      transitionName=""
+      maskTransitionName=""
+      // minor cosmetics
       style={{ top: 20 }}
       bodyStyle={{ padding: 0 }}
     >
-      <HistoricalCharts ref={chartsRef} show={showGraphModal} />
+      {/* Hard visibility toggle: DOM always present; just hidden when closed */}
+      <div style={{ display: showGraphModal ? 'block' : 'none' }}>
+        <HistoricalCharts ref={chartsRef} show={showGraphModal} />
+      </div>
     </Modal>
   );
 
