@@ -747,20 +747,7 @@ export default function DashboardPage() {
                 >
                   View Historical Growth
                 </Button>
-                 {/* IMPORTANT: keep the chart mounted, and only poll when open */}
-      <Modal
-        title="Historical Growth"
-        open={growthOpen}
-        onCancel={() => setGrowthOpen(false)}
-        footer={null}
-        width={1000}
-        destroyOnClose={false}   // <= keeps charts mounted (prevents remount flicker)
-        forceRender              // <= renders once at page load (no first-open flash)
-        maskClosable={false}
-      >
-        {/* Keep component mounted; drive fetching only while open */}
-        <HistoricalCharts show={growthOpen} live={growthOpen} pollMs={3000} />
-      </Modal>
+                
               </div>
             </div>
 
