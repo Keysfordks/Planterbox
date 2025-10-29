@@ -38,25 +38,20 @@ ChartJS.register(
 );
 
 /**
- * HistoricalCharts — flicker-free version
- * - No skeletons/placeholder screens at any time (so nothing flashes).
- * - Chart stays mounted; only datasets update.
- * - Internal polling (default 3s) so parents don't need to re-render it.
- * - Dashed horizontal line shows the current reading's Y-value vs the ideal band.
+ * HistoricalCharts — flicker-free
+ * - No skeletons/placeholder screens; chart stays mounted at all times.
+ * - Internal polling (default 3s). Parent just controls visibility via props.
+ * - Dashed horizontal line shows CURRENT Y-value vs ideal band.
  *
- * Usage:
- *   <HistoricalCharts show live pollMs={3000} />
- *
- * Optional props:
- *   show: boolean            – when false, pauses fetching (chart stays mounted).
- *   live: boolean            – enable internal polling (default true).
- *   pollMs: number           – polling interval ms (min 1000).
+ * Props:
+ *   show  (boolean) – if false, pauses fetching (chart remains mounted)
+ *   live  (boolean) – enable polling (default true)
+ *   pollMs(number)  – polling interval (ms), min 1000
  */
 const HistoricalCharts = forwardRef(function HistoricalCharts(
   { show = true, live = true, pollMs = 3000 },
   ref
 ) {
-  // last good payload
   const [payload, setPayload] = useState({
     historicalData: [],
     idealConditions: null,
@@ -64,9 +59,8 @@ const HistoricalCharts = forwardRef(function HistoricalCharts(
   });
 
   const abortRef = useRef(null);
-  const hasLoadedOnceRef = useRef(false);
-  const signatureRef = useRef(''); // used to avoid unnecessary state updates
-  const isFetchingRef = useRef(false); // used only for the small updating badge
+  const signatureRef = useRef(''); // avoid unnecessary state updates
+  const isFetchingRef = useRef(false); // small “updating…” badge only
 
   // chart refs (for snapshot export)
   const tempRef = useRef(null);
@@ -78,7 +72,6 @@ const HistoricalCharts = forwardRef(function HistoricalCharts(
     const rows = Array.isArray(json?.historicalData) ? json.historicalData : [];
     const ideals = json?.idealConditions ?? {};
     const last = rows.length ? rows[rows.length - 1] : null;
-    // compact signature: row count + last row + ideal ranges
     return [
       rows.length,
       last?.timestamp || 'none',
@@ -98,13 +91,11 @@ const HistoricalCharts = forwardRef(function HistoricalCharts(
   }
 
   async function loadGrowth() {
-    // never show a skeleton — just update an "updating…" badge
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
     isFetchingRef.current = true;
-
     try {
       const res = await fetch('/api/sensordata?growth=true', {
         cache: 'no-store',
@@ -127,12 +118,9 @@ const HistoricalCharts = forwardRef(function HistoricalCharts(
         signatureRef.current = sig;
         setPayload(nextPayload);
       }
-
-      hasLoadedOnceRef.current = true;
     } catch (e) {
       if (e?.name !== 'AbortError') {
         // Keep the old payload visible; just log the failure.
-        // This avoids any visual flash/flicker.
         console.error('HistoricalCharts load error:', e);
       }
     } finally {
@@ -200,7 +188,7 @@ const HistoricalCharts = forwardRef(function HistoricalCharts(
 
   return (
     <div style={{ padding: 16, position: 'relative' }}>
-      {/* No skeleton ever — the chart remains mounted at all times */}
+      {/* No skeleton ever — chart remains mounted at all times */}
 
       {!hasData ? (
         <div style={{ lineHeight: 1.6 }}>
@@ -369,8 +357,7 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
       responsive: true,
       maintainAspectRatio: false,
       normalized: true,
-      // Turn off animations so the line updates without flashing
-      animation: { duration: 0 },
+      animation: { duration: 0 }, // no flashing
       transitions: { active: { animation: { duration: 0 } } },
       plugins: {
         legend: { display: false },
@@ -393,25 +380,15 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
       },
       interaction: { mode: 'nearest', intersect: false },
       scales: {
-        x: {
-          type: 'time',
-          time: { unit: timeUnit },
-          grid: { display: false },
-          ticks: { maxRotation: 0 },
-        },
-        y: {
-          beginAtZero: false,
-          grid: { color: 'rgba(0,0,0,0.08)' },
-          ticks: { callback: (v) => `${v}${unit ? ` ${unit}` : ''}` },
-        },
+        x: { type: 'time', time: { unit: timeUnit }, grid: { display: false }, ticks: { maxRotation: 0 } },
+        y: { beginAtZero: false, grid: { color: 'rgba(0,0,0,0.08)' }, ticks: { callback: (v) => `${v}${unit ? ` ${unit}` : ''}` } },
       },
       elements: { line: { borderJoinStyle: 'round' } },
     }),
     [annotations, idealMin, idealMax, timeUnit, title, unit]
   );
 
-  // Always render the Line (no conditional), even if points are empty;
-  // this ensures the component never unmounts → no flicker.
+  // Always render the Line (no conditional), even if points are empty.
   return (
     <div style={{ height: 260, border: '1px solid #e5e7eb', borderRadius: 10, padding: 12 }}>
       <Line ref={chartRef} data={data} options={options} updateMode="none" />
