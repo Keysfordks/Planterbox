@@ -269,7 +269,7 @@ function pushSeries(ref, rows, field, unit, idealMin, idealMax) {
       spanGaps: true,
       _unit: unit,
       fill: false,
-      borderColor: colorMap[field] || '#111',         // dark black line
+      borderColor: '#111',         // dark black line
       backgroundColor: '#111',     // used for points if ever shown
       borderWidth: 3,
       tension: 0.25,
@@ -277,12 +277,7 @@ function pushSeries(ref, rows, field, unit, idealMin, idealMax) {
       shadowColor: 'rgba(0,0,0,0.4)'
 }];
 
-const colorMap = {
-  temperature: '#000', // black
-  humidity: '#0066ff',
-  ppm: '#ff9900',
-  ph: '#10b981'
-};
+
   }
 
   // Update data in place
