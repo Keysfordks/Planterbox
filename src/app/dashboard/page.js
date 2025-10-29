@@ -123,49 +123,85 @@ export default function DashboardPage() {
     try {
       const values = await form.validateFields();
 
-      let idealConditionsToUse;
+      const initialStage = dropdownStage; // which stage becomes active after creation
+
       if (isCustomPlant) {
-        idealConditionsToUse = {
-          temp_min: values.temp_min,
-          temp_max: values.temp_max,
-          humidity_min: values.humidity_min,
-          humidity_max: values.humidity_max,
-          ph_min: values.ph_min,
-          ph_max: values.ph_max,
-          ppm_min: values.ppm_min,
-          ppm_max: values.ppm_max,
-          light_pwm_cycle: values.light_pwm_cycle,
+        const build = (obj) => ({
+          temp_min: obj.temp_min,
+          temp_max: obj.temp_max,
+          humidity_min: obj.humidity_min,
+          humidity_max: obj.humidity_max,
+          ph_min: obj.ph_min,
+          ph_max: obj.ph_max,
+          ppm_min: obj.ppm_min,
+          ppm_max: obj.ppm_max,
+          light_pwm_cycle: obj.light_pwm_cycle,
+        });
+
+        const stages = {
+          seedling:   build(values.seedling),
+          vegetative: build(values.vegetative),
+          mature:     build(values.mature),
         };
-      } else {
-        if (!selectedPreset) {
-          message.error("Please select a plant type");
-          return;
-        }
-        const presetResponse = await fetch(
-          `/api/plants?presets=true&plant=${selectedPreset.plant_name}&stage=${dropdownStage}`
-        );
-        const presetData = await presetResponse.json();
-        idealConditionsToUse = presetData.ideal_conditions || selectedPreset.ideal_conditions;
+
+        const res = await fetch("/api/plants", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            plant_name: values.customPlantName,
+            stages,
+            initial_stage: initialStage
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to create plant");
+
+        // Keep local UI in sync with server selection
+        await handlePlantSelection(values.customPlantName, initialStage);
+
+        setSelectedPlant(values.customPlantName);
+        setSelectedStage(initialStage);
+        setNewStage(initialStage);
+        localStorage.setItem("selectedPlant", values.customPlantName);
+        localStorage.setItem("selectedStage", initialStage);
+
+        setShowPlantModal(false);
+        setIsCustomPlant(false);
+        form.resetFields();
+        message.success(`${values.customPlantName} created with 3 stages!`);
+        return;
       }
 
-      const response = await fetch("/api/plants", {
+      // ---- Preset path (placeholder-ready, unchanged functionality) ----
+      if (!selectedPreset) {
+        message.error("Please select a plant type");
+        return;
+      }
+      const presetResponse = await fetch(
+        `/api/plants?presets=true&plant=${selectedPreset.plant_name}&stage=${dropdownStage}`
+      );
+      const presetData = await presetResponse.json();
+      const initialStages = selectedPreset?.stages || {
+        seedling: presetData.ideal_conditions,
+        vegetative: presetData.ideal_conditions,
+        mature: presetData.ideal_conditions
+      };
+
+      const res = await fetch("/api/plants", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           plant_name: values.customPlantName,
-          preset_type: isCustomPlant ? "custom" : selectedPreset.plant_name,
-          stage: dropdownStage,
-          ideal_conditions: idealConditionsToUse,
+          stages: initialStages,
+          initial_stage: dropdownStage
         }),
       });
+      if (!res.ok) throw new Error("Failed to create plant");
 
-      if (!response.ok) throw new Error("Failed to create plant");
-
-      const data = await response.json();
-      setSelectedPlant(data.plant.plant_name);
+      await handlePlantSelection(values.customPlantName, dropdownStage);
+      setSelectedPlant(values.customPlantName);
       setSelectedStage(dropdownStage);
       setNewStage(dropdownStage);
-      localStorage.setItem("selectedPlant", data.plant.plant_name);
+      localStorage.setItem("selectedPlant", values.customPlantName);
       localStorage.setItem("selectedStage", dropdownStage);
       setShowPlantModal(false);
       setIsCustomPlant(false);
@@ -468,7 +504,7 @@ export default function DashboardPage() {
         style={{
           position: 'fixed',
           inset: 0,
-          display: showGraphModal ? 'flex' : 'none', // ⚠️ never unmounts, only hides
+          display: showGraphModal ? 'flex' : 'none',
           alignItems: 'center',
           justifyContent: 'center',
           background: 'rgba(0,0,0,0.45)',
@@ -489,7 +525,7 @@ export default function DashboardPage() {
             display: 'flex',
             flexDirection: 'column',
           }}
-          onClick={(e) => e.stopPropagation()} // prevent closing when clicking inside
+          onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
           <div style={{
@@ -539,16 +575,11 @@ export default function DashboardPage() {
             layout="vertical"
             style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}
             initialValues={{
-              temp_min: 20,
-              temp_max: 26,
-              humidity_min: 50,
-              humidity_max: 70,
-              ph_min: 5.5,
-              ph_max: 6.5,
-              ppm_min: 800,
-              ppm_max: 1200,
-              light_pwm_cycle: 12,
               dropdownStage: "seedling",
+              // sensible defaults for all three stages
+              seedling:   { temp_min: 20, temp_max: 26, humidity_min: 50, humidity_max: 70, ph_min: 5.5, ph_max: 6.5, ppm_min: 400, ppm_max: 800, light_pwm_cycle: 12 },
+              vegetative: { temp_min: 21, temp_max: 27, humidity_min: 45, humidity_max: 65, ph_min: 5.8, ph_max: 6.6, ppm_min: 700, ppm_max: 1000, light_pwm_cycle: 14 },
+              mature:     { temp_min: 22, temp_max: 28, humidity_min: 40, humidity_max: 60, ph_min: 6.0, ph_max: 6.8, ppm_min: 900, ppm_max: 1200, light_pwm_cycle: 12 },
             }}
           >
             <Form.Item
@@ -577,7 +608,7 @@ export default function DashboardPage() {
                 style={{ width: "100%" }}
               >
                 {availablePresets.map((preset) => (
-                  <Option key={preset._id} value={preset.plant_name}>
+                  <Option key={preset._id || preset.plant_name} value={preset.plant_name}>
                     {preset.plant_name.charAt(0).toUpperCase() + preset.plant_name.slice(1)}
                   </Option>
                 ))}
@@ -585,75 +616,181 @@ export default function DashboardPage() {
               </Select>
             </Form.Item>
 
+            {/* ---- three-stage custom UI ---- */}
             {isCustomPlant && (
               <>
                 <Alert
                   message="Custom Plant Configuration"
-                  description="Set your ideal environmental ranges for optimal growth. The system will alert you when values fall outside these ranges."
+                  description="Define ideal environmental ranges for each stage. Switch stages any time during growth."
                   type="info"
                   showIcon
                   style={{ marginBottom: "16px" }}
                 />
 
-                <Title level={5}>Temperature Range (°C)</Title>
+                {/* Seedling */}
+                <Title level={5} style={{ marginTop: 8 }}>Seedling</Title>
                 <Row gutter={16}>
                   <Col span={12}>
-                    <Form.Item label="Minimum" name="temp_min" rules={[{ required: true, message: 'Required' }]}>
+                    <Form.Item label="Temp Min (°C)" name={['seedling', 'temp_min']} rules={[{ required: true, message: 'Required' }]} >
                       <InputNumber style={{ width: "100%" }} min={10} max={40} />
                     </Form.Item>
                   </Col>
                   <Col span={12}>
-                    <Form.Item label="Maximum" name="temp_max" rules={[{ required: true, message: 'Required' }]}>
+                    <Form.Item label="Temp Max (°C)" name={['seedling', 'temp_max']} rules={[{ required: true, message: 'Required' }]} >
                       <InputNumber style={{ width: "100%" }} min={10} max={40} />
                     </Form.Item>
                   </Col>
                 </Row>
-
-                <Title level={5}>Humidity Range (%)</Title>
                 <Row gutter={16}>
                   <Col span={12}>
-                    <Form.Item label="Minimum" name="humidity_min" rules={[{ required: true, message: 'Required' }]}>
+                    <Form.Item label="Humidity Min (%)" name={['seedling', 'humidity_min']} rules={[{ required: true, message: 'Required' }]}>
                       <InputNumber style={{ width: "100%" }} min={0} max={100} />
                     </Form.Item>
                   </Col>
                   <Col span={12}>
-                    <Form.Item label="Maximum" name="humidity_max" rules={[{ required: true, message: 'Required' }]}>
+                    <Form.Item label="Humidity Max (%)" name={['seedling', 'humidity_max']} rules={[{ required: true, message: 'Required' }]}>
                       <InputNumber style={{ width: "100%" }} min={0} max={100} />
                     </Form.Item>
                   </Col>
                 </Row>
-
-                <Title level={5}>pH Range</Title>
                 <Row gutter={16}>
                   <Col span={12}>
-                    <Form.Item label="Minimum" name="ph_min" rules={[{ required: true, message: 'Required' }]}>
+                    <Form.Item label="pH Min" name={['seedling', 'ph_min']} rules={[{ required: true, message: 'Required' }]}>
                       <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
                     </Form.Item>
                   </Col>
                   <Col span={12}>
-                    <Form.Item label="Maximum" name="ph_max" rules={[{ required: true, message: 'Required' }]}>
+                    <Form.Item label="pH Max" name={['seedling', 'ph_max']} rules={[{ required: true, message: 'Required' }]}>
                       <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
                     </Form.Item>
                   </Col>
                 </Row>
-
-                <Title level={5}>PPM Range (Nutrients)</Title>
                 <Row gutter={16}>
                   <Col span={12}>
-                    <Form.Item label="Minimum" name="ppm_min" rules={[{ required: true, message: 'Required' }]}>
+                    <Form.Item label="PPM Min" name={['seedling', 'ppm_min']} rules={[{ required: true, message: 'Required' }]}>
                       <InputNumber style={{ width: "100%" }} min={0} max={5000} />
                     </Form.Item>
                   </Col>
                   <Col span={12}>
-                    <Form.Item label="Maximum" name="ppm_max" rules={[{ required: true, message: 'Required' }]}>
+                    <Form.Item label="PPM Max" name={['seedling', 'ppm_max']} rules={[{ required: true, message: 'Required' }]}>
                       <InputNumber style={{ width: "100%" }} min={0} max={5000} />
                     </Form.Item>
                   </Col>
                 </Row>
+                <Form.Item label="Light PWM Cycle (hrs/day)" name={['seedling', 'light_pwm_cycle']} rules={[{ required: true, message: 'Required' }]}>
+                  <InputNumber style={{ width: "100%" }} min={0} max={24} />
+                </Form.Item>
 
-                <Title level={5}>Light PWM Cycle (Hrs/Day)</Title>
-                <Form.Item name="light_pwm_cycle" rules={[{ required: true, message: 'Required' }]}>
-                  <InputNumber style={{ width: "100%" }} min={0} max={100} />
+                <Divider />
+
+                {/* Vegetative */}
+                <Title level={5}>Vegetative</Title>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Temp Min (°C)" name={['vegetative', 'temp_min']} rules={[{ required: true, message: 'Required' }]} >
+                      <InputNumber style={{ width: "100%" }} min={10} max={40} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Temp Max (°C)" name={['vegetative', 'temp_max']} rules={[{ required: true, message: 'Required' }]} >
+                      <InputNumber style={{ width: "100%" }} min={10} max={40} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Humidity Min (%)" name={['vegetative', 'humidity_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={100} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Humidity Max (%)" name={['vegetative', 'humidity_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={100} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="pH Min" name={['vegetative', 'ph_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="pH Max" name={['vegetative', 'ph_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="PPM Min" name={['vegetative', 'ppm_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={5000} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="PPM Max" name={['vegetative', 'ppm_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={5000} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Form.Item label="Light PWM Cycle (hrs/day)" name={['vegetative', 'light_pwm_cycle']} rules={[{ required: true, message: 'Required' }]}>
+                  <InputNumber style={{ width: "100%" }} min={0} max={24} />
+                </Form.Item>
+
+                <Divider />
+
+                {/* Mature */}
+                <Title level={5}>Mature</Title>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Temp Min (°C)" name={['mature', 'temp_min']} rules={[{ required: true, message: 'Required' }]} >
+                      <InputNumber style={{ width: "100%" }} min={10} max={40} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Temp Max (°C)" name={['mature', 'temp_max']} rules={[{ required: true, message: 'Required' }]} >
+                      <InputNumber style={{ width: "100%" }} min={10} max={40} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Humidity Min (%)" name={['mature', 'humidity_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={100} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Humidity Max (%)" name={['mature', 'humidity_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={100} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="pH Min" name={['mature', 'ph_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="pH Max" name={['mature', 'ph_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="PPM Min" name={['mature', 'ppm_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={5000} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="PPM Max" name={['mature', 'ppm_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={5000} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Form.Item label="Light PWM Cycle (hrs/day)" name={['mature', 'light_pwm_cycle']} rules={[{ required: true, message: 'Required' }]}>
+                  <InputNumber style={{ width: "100%" }} min={0} max={24} />
                 </Form.Item>
               </>
             )}
@@ -680,7 +817,7 @@ export default function DashboardPage() {
               }
               name="dropdownStage"
             >
-              <Select size="large" onChange={(value) => setDropdownStage(value)} style={{ width: "100%" }}>
+              <Select size="large" value={dropdownStage} onChange={(value) => setDropdownStage(value)} style={{ width: "100%" }}>
                 {GROWTH_STAGES.map((stage) => (
                   <Option key={stage} value={stage}>
                     {stage.charAt(0).toUpperCase() + stage.slice(1)} Stage
