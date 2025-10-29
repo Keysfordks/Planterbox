@@ -44,7 +44,6 @@ export default function DashboardPage() {
   const [lastUpdated, setLastUpdated] = useState(null);
 
   // Historical chart modal + ref for snapshots
-  theCharts:
   const [showGraphModal, setShowGraphModal] = useState(false);
   const chartsRef = useRef(null);
 
