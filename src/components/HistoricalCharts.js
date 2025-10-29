@@ -31,16 +31,13 @@ ChartJS.register(
 );
 
 const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
-  const [payload, setPayload] = useState(null);     // last seen payload (we'll preserve rows when needed)
+  const [payload, setPayload] = useState(null);
   const [error, setError] = useState(null);
   const [isFetching, setIsFetching] = useState(false);
   const hasLoadedOnceRef = useRef(false);
   const abortRef = useRef(null);
+  const lastGoodRowsRef = useRef([]); // 👈 preserves last non-empty rows
 
-  // keep a copy of the last **non-empty** rows to avoid visual "collapse" between ticks
-  const lastGoodRowsRef = useRef([]);
-
-  // refs to individual charts for snapshot
   const tempRef = useRef(null);
   const humRef  = useRef(null);
   const ppmRef  = useRef(null);
@@ -61,26 +58,23 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
       }
       const json = await res.json();
 
-      const nextRows = Array.isArray(json?.historicalData) ? json.historicalData : [];
+      const rows = Array.isArray(json?.historicalData) ? json.historicalData : [];
       const nextPayload = {
-        historicalData: nextRows,
+        historicalData: rows,
         idealConditions: json?.idealConditions ?? null,
         selectionStartTime: json?.selectionStartTime ?? null,
       };
 
-      // Preserve the last good (non-empty) dataset to prevent the chart from "closing"
-      if (nextRows.length > 0) {
-        lastGoodRowsRef.current = nextRows;
+      if (rows.length > 0) {
+        lastGoodRowsRef.current = rows;
         setPayload(nextPayload);
       } else if (hasLoadedOnceRef.current && lastGoodRowsRef.current.length > 0) {
-        // Keep previous rows; still update ideals & selection time
         setPayload(prev => ({
           historicalData: lastGoodRowsRef.current,
           idealConditions: nextPayload.idealConditions,
           selectionStartTime: nextPayload.selectionStartTime,
         }));
       } else {
-        // First load and genuinely empty -> show empty once, but never "collapse" afterward
         setPayload(nextPayload);
       }
 
@@ -98,21 +92,23 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
     }
   }
 
+  // Poll every 5s while visible; charts stay mounted the whole time.
   useEffect(() => {
     if (!show) return;
-    loadGrowth();
-    return () => { if (abortRef.current) abortRef.current.abort(); };
-    // We purposely only refetch on open; polling (if needed) should happen outside,
-    // but the component will not flash even if parent re-renders often.
+    let timer;
+    (async () => {
+      await loadGrowth();
+      timer = setInterval(loadGrowth, 5000);
+    })();
+    return () => { clearInterval(timer); if (abortRef.current) abortRef.current.abort(); };
   }, [show]);
 
   const rows = payload?.historicalData ?? [];
   const ideals = payload?.idealConditions ?? null;
-  const hasDataEver = hasLoadedOnceRef.current || rows.length > 0;
   const hasDataNow = rows.length > 0;
+  const hasDataEver = hasLoadedOnceRef.current || hasDataNow;
   const isInitialLoading = !hasLoadedOnceRef.current && !error && !hasDataNow;
 
-  // time unit selection
   const timeUnit = useMemo(() => {
     if (!hasDataNow) return 'hour';
     const first = new Date(rows[0].timestamp).getTime();
@@ -123,7 +119,6 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
     return 'week';
   }, [rows, hasDataNow]);
 
-  // Expose snapshots to parent
   useImperativeHandle(ref, () => ({
     getSnapshots: () => {
       const snap = (r) => {
@@ -147,19 +142,14 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
 
   return (
     <div style={{ padding: 16, position: 'relative' }}>
-      {/* Initial skeleton only on the very first load */}
       {isInitialLoading && (
         <div style={{ height: 208, borderRadius: 10, background: '#e5e7eb', animation: 'pulse 1.5s ease-in-out infinite' }} />
       )}
 
-      {/* Error banner (non-blocking; charts remain mounted once shown) */}
       {error && !isInitialLoading && (
         <div style={{ color: 'crimson', marginBottom: 12 }}>{error}</div>
       )}
 
-      {/* Keep charts mounted once they've been shown at least once.
-          If there is truly never any data, we'll show the friendly empty
-          message—but only before the first chart render. */}
       {hasDataEver ? (
         <div style={{ display: 'grid', gap: 24 }}>
           <MetricChart
@@ -167,7 +157,7 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
             title="Temperature (°C)"
             unit="°C"
             field="temperature"
-            rows={rows.length > 0 ? rows : lastGoodRowsRef.current}
+            rows={hasDataNow ? rows : lastGoodRowsRef.current}
             idealMin={ideals?.temp_min ?? null}
             idealMax={ideals?.temp_max ?? null}
             timeUnit={timeUnit}
@@ -177,7 +167,7 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
             title="Humidity (%)"
             unit="%"
             field="humidity"
-            rows={rows.length > 0 ? rows : lastGoodRowsRef.current}
+            rows={hasDataNow ? rows : lastGoodRowsRef.current}
             idealMin={ideals?.humidity_min ?? null}
             idealMax={ideals?.humidity_max ?? null}
             timeUnit={timeUnit}
@@ -187,7 +177,7 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
             title="PPM (Nutrients)"
             unit=""
             field="ppm"
-            rows={rows.length > 0 ? rows : lastGoodRowsRef.current}
+            rows={hasDataNow ? rows : lastGoodRowsRef.current}
             idealMin={ideals?.ppm_min ?? null}
             idealMax={ideals?.ppm_max ?? null}
             timeUnit={timeUnit}
@@ -197,7 +187,7 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
             title="pH Level"
             unit=""
             field="ph"
-            rows={rows.length > 0 ? rows : lastGoodRowsRef.current}
+            rows={hasDataNow ? rows : lastGoodRowsRef.current}
             idealMin={ideals?.ph_min ?? null}
             idealMax={ideals?.ph_max ?? null}
             timeUnit={timeUnit}
@@ -238,7 +228,6 @@ export default HistoricalCharts;
 
 /** One chart with an ideal-range green band (no flicker version) */
 function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, timeUnit }) {
-  // map to points (x: Date, y: number)
   const points = useMemo(() => (
     rows
       .map(r => {
@@ -249,7 +238,6 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
       .filter(Boolean)
   ), [rows, field]);
 
-  // stable dataset shape; just swap .data
   const data = useMemo(() => ({
     datasets: [
       {
@@ -282,7 +270,7 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
     responsive: true,
     maintainAspectRatio: false,
     normalized: true,
-    animation: { duration: 0 },               // zero-duration -> no flash
+    animation: { duration: 0 },
     transitions: { active: { animation: { duration: 0 } } },
     plugins: {
       legend: { display: false },
@@ -311,13 +299,11 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
 
   return (
     <div style={{ height: 260, border: '1px solid #e5e7eb', borderRadius: 10, padding: 12 }}>
-      {/* Keeping a constant <Line> instance prevents "close/reopen" effects */}
       <Line ref={chartRef} data={data} options={options} updateMode="none" />
     </div>
   );
 }
 
-/* tiny css keyframes for skeleton (optional) */
 if (typeof document !== 'undefined') {
   const style = document.createElement('style');
   style.innerHTML = `@keyframes pulse { 0%,100%{opacity:.6} 50%{opacity:1} }`;

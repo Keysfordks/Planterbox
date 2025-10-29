@@ -9,11 +9,11 @@ import {
 } from "antd";
 import Navbar from "../../components/navbar";
 import styles from "../../styles/dashboard.module.css";
-import { FaInfoCircle, FaExclamationTriangle, FaLeaf } from "react-icons/fa";
+import { FaInfoCircle, FaLeaf } from "react-icons/fa";
 
 // Charts (exposes ref.getSnapshots())
 import HistoricalCharts from "../../components/HistoricalCharts";
-// New Past Grows grid
+// Past Grows grid
 import PastGrowsGrid from "../../components/PastGrowsGrid";
 
 const { Title, Text, Paragraph } = Typography;
@@ -52,7 +52,6 @@ export default function DashboardPage() {
   const [availablePresets, setAvailablePresets] = useState([]);
   const [selectedPreset, setSelectedPreset] = useState(null);
   const [isCustomPlant, setIsCustomPlant] = useState(false);
-  // customIdealConditions state removed and managed by Antd Form
   const [form] = Form.useForm();
 
   // Fetch plant presets
@@ -121,7 +120,6 @@ export default function DashboardPage() {
 
       let idealConditionsToUse;
       if (isCustomPlant) {
-        // Now retrieving all custom fields directly from validated form values
         idealConditionsToUse = {
           temp_min: values.temp_min,
           temp_max: values.temp_max,
@@ -170,7 +168,6 @@ export default function DashboardPage() {
       message.success(`${values.customPlantName} created successfully!`);
     } catch (error) {
       console.error("Error creating plant:", error);
-      // Removed the alert about checking custom values as they are now required fields in the form
       message.error("Please fill in all required fields");
     }
   };
@@ -205,9 +202,7 @@ export default function DashboardPage() {
 
   const handleAbortPlant = async () => {
     try {
-      // Try to capture chart snapshots if the historical modal has been opened before
       const snapshots = chartsRef.current?.getSnapshots?.() || null;
-
       const response = await fetch("/api/sensordata", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -234,7 +229,7 @@ export default function DashboardPage() {
 
   const openHistoricalGraph = () => setShowGraphModal(true);
 
-  // Charts modal
+  // Charts modal (keeps DOM mounted; no flicker)
   const ChartModal = () => (
     <Modal
       open={showGraphModal}
@@ -244,11 +239,11 @@ export default function DashboardPage() {
       centered
       closable
       maskClosable
-      destroyOnClose={false}
+      destroyOnClose={false}   // keep children mounted when closed
+      forceRender              // pre-mount content to prevent portal/transition blink
       style={{ top: 20 }}
       bodyStyle={{ padding: 0 }}
     >
-      {/* HistoricalCharts keeps previous render during background fetches */}
       <HistoricalCharts ref={chartsRef} show={showGraphModal} />
     </Modal>
   );
@@ -282,7 +277,6 @@ export default function DashboardPage() {
           form={form} 
           layout="vertical" 
           style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}
-          // Set initial values for form fields, including custom ones
           initialValues={{
             temp_min: 20,
             temp_max: 26,
@@ -343,31 +337,13 @@ export default function DashboardPage() {
               <Title level={5}>Temperature Range (°C)</Title>
               <Row gutter={16}>
                 <Col span={12}>
-                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
-                  <Form.Item 
-                    label="Minimum" 
-                    name="temp_min"
-                    rules={[{ required: true, message: 'Required' }]}
-                  >
-                    <InputNumber
-                      style={{ width: "100%" }}
-                      min={10}
-                      max={40}
-                    />
+                  <Form.Item label="Minimum" name="temp_min" rules={[{ required: true, message: 'Required' }]}>
+                    <InputNumber style={{ width: "100%" }} min={10} max={40} />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
-                  <Form.Item 
-                    label="Maximum" 
-                    name="temp_max"
-                    rules={[{ required: true, message: 'Required' }]}
-                  >
-                    <InputNumber
-                      style={{ width: "100%" }}
-                      min={10}
-                      max={40}
-                    />
+                  <Form.Item label="Maximum" name="temp_max" rules={[{ required: true, message: 'Required' }]}>
+                    <InputNumber style={{ width: "100%" }} min={10} max={40} />
                   </Form.Item>
                 </Col>
               </Row>
@@ -375,31 +351,13 @@ export default function DashboardPage() {
               <Title level={5}>Humidity Range (%)</Title>
               <Row gutter={16}>
                 <Col span={12}>
-                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
-                  <Form.Item 
-                    label="Minimum" 
-                    name="humidity_min"
-                    rules={[{ required: true, message: 'Required' }]}
-                  >
-                    <InputNumber
-                      style={{ width: "100%" }}
-                      min={0}
-                      max={100}
-                    />
+                  <Form.Item label="Minimum" name="humidity_min" rules={[{ required: true, message: 'Required' }]}>
+                    <InputNumber style={{ width: "100%" }} min={0} max={100} />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
-                  <Form.Item 
-                    label="Maximum" 
-                    name="humidity_max"
-                    rules={[{ required: true, message: 'Required' }]}
-                  >
-                    <InputNumber
-                      style={{ width: "100%" }}
-                      min={0}
-                      max={100}
-                    />
+                  <Form.Item label="Maximum" name="humidity_max" rules={[{ required: true, message: 'Required' }]}>
+                    <InputNumber style={{ width: "100%" }} min={0} max={100} />
                   </Form.Item>
                 </Col>
               </Row>
@@ -407,33 +365,13 @@ export default function DashboardPage() {
               <Title level={5}>pH Range</Title>
               <Row gutter={16}>
                 <Col span={12}>
-                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
-                  <Form.Item 
-                    label="Minimum" 
-                    name="ph_min"
-                    rules={[{ required: true, message: 'Required' }]}
-                  >
-                    <InputNumber
-                      style={{ width: "100%" }}
-                      min={0}
-                      max={14}
-                      step={0.1}
-                    />
+                  <Form.Item label="Minimum" name="ph_min" rules={[{ required: true, message: 'Required' }]}>
+                    <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
-                  <Form.Item 
-                    label="Maximum" 
-                    name="ph_max"
-                    rules={[{ required: true, message: 'Required' }]}
-                  >
-                    <InputNumber
-                      style={{ width: "100%" }}
-                      min={0}
-                      max={14}
-                      step={0.1}
-                    />
+                  <Form.Item label="Maximum" name="ph_max" rules={[{ required: true, message: 'Required' }]}>
+                    <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
                   </Form.Item>
                 </Col>
               </Row>
@@ -441,46 +379,20 @@ export default function DashboardPage() {
               <Title level={5}>PPM Range (Nutrients)</Title>
               <Row gutter={16}>
                 <Col span={12}>
-                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
-                  <Form.Item 
-                    label="Minimum" 
-                    name="ppm_min"
-                    rules={[{ required: true, message: 'Required' }]}
-                  >
-                    <InputNumber
-                      style={{ width: "100%" }}
-                      min={0}
-                      max={5000}
-                    />
+                  <Form.Item label="Minimum" name="ppm_min" rules={[{ required: true, message: 'Required' }]}>
+                    <InputNumber style={{ width: "100%" }} min={0} max={5000} />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
-                  {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
-                  <Form.Item 
-                    label="Maximum" 
-                    name="ppm_max"
-                    rules={[{ required: true, message: 'Required' }]}
-                  >
-                    <InputNumber
-                      style={{ width: "100%" }}
-                      min={0}
-                      max={5000}
-                    />
+                  <Form.Item label="Maximum" name="ppm_max" rules={[{ required: true, message: 'Required' }]}>
+                    <InputNumber style={{ width: "100%" }} min={0} max={5000} />
                   </Form.Item>
                 </Col>
               </Row>
 
               <Title level={5}>Light PWM Cycle (Hrs/Day)</Title>
-              {/* Using Form.Item name attribute lets the form manage state, fixing the re-render issue */}
-              <Form.Item 
-                name="light_pwm_cycle"
-                rules={[{ required: true, message: 'Required' }]}
-              >
-                <InputNumber
-                  style={{ width: "100%" }}
-                  min={0}
-                  max={100}
-                />
+              <Form.Item name="light_pwm_cycle" rules={[{ required: true, message: 'Required' }]}>
+                <InputNumber style={{ width: "100%" }} min={0} max={100} />
               </Form.Item>
             </>
           )}
@@ -505,13 +417,9 @@ export default function DashboardPage() {
                 </Tooltip>
               </Text>
             }
-            name="dropdownStage" // Form manages the value of the Select
+            name="dropdownStage"
           >
-            <Select
-              size="large"
-              onChange={(value) => setDropdownStage(value)} // Still need this for external state sync/submission
-              style={{ width: "100%" }}
-            >
+            <Select size="large" onChange={(value) => setDropdownStage(value)} style={{ width: "100%" }}>
               {GROWTH_STAGES.map((stage) => (
                 <Option key={stage} value={stage}>
                   {stage.charAt(0).toUpperCase() + stage.slice(1)} Stage
@@ -613,95 +521,91 @@ export default function DashboardPage() {
               <p className={styles.lastUpdated}>Last updated: {lastUpdated}</p>
 
               {/* Sensor Cards */}
-<div className={styles.sensorGrid}>
-  {Object.keys(sensors)
-    // Hide backend/internal fields
-    .filter(
-      (key) =>
-        ![
-          "userId",
-          "default_device",
-          "deviceId",
-          "_id",
-          "__v",
-          "timestamp",
-          "idealRanges",
-        ].includes(key)
-    )
-    .map((key) => {
-      const value = sensors[key];
-      const status = sensorStatus[key] || "Loading...";
+              <div className={styles.sensorGrid}>
+                {Object.keys(sensors)
+                  .filter(
+                    (key) =>
+                      ![
+                        "userId",
+                        "default_device",
+                        "deviceId",
+                        "_id",
+                        "__v",
+                        "timestamp",
+                        "idealRanges",
+                      ].includes(key)
+                  )
+                  .map((key) => {
+                    const value = sensors[key];
+                    const status = sensorStatus[key] || "Loading...";
 
-      let statusClass = styles.ideal;
-      let valueDisplay;
+                    let statusClass = styles.ideal;
+                    let valueDisplay;
 
-      if (key === "water_sufficient") {
-        valueDisplay = value ? "IDEAL" : "TOO LOW";
-        statusClass = value ? styles.ideal : styles.warning;
-      } else if (key === "ppm" && status === "DILUTE_WATER") {
-        valueDisplay =
-          value != null ? parseFloat(value).toFixed(2) : "Loading...";
-        statusClass = styles.dilute;
-      } else {
-        valueDisplay =
-          value != null
-            ? typeof value === "number"
-              ? parseFloat(value).toFixed(2)
-              : value
-            : "Loading...";
-        statusClass = status === "IDEAL" ? styles.ideal : styles.warning;
-      }
+                    if (key === "water_sufficient") {
+                      valueDisplay = value ? "IDEAL" : "TOO LOW";
+                      statusClass = value ? styles.ideal : styles.warning;
+                    } else if (key === "ppm" && status === "DILUTE_WATER") {
+                      valueDisplay = value != null ? parseFloat(value).toFixed(2) : "Loading...";
+                      statusClass = styles.dilute;
+                    } else {
+                      valueDisplay =
+                        value != null
+                          ? typeof value === "number"
+                            ? parseFloat(value).toFixed(2)
+                            : value
+                          : "Loading...";
+                      statusClass = status === "IDEAL" ? styles.ideal : styles.warning;
+                    }
 
-      // Only show Ideal text if valid values exist
-      const idealText =
-        idealRanges &&
-        ((key === "temperature" &&
-          idealRanges.temp_min != null &&
-          idealRanges.temp_max != null &&
-          `Ideal: ${idealRanges.temp_min}°C – ${idealRanges.temp_max}°C`) ||
-          (key === "humidity" &&
-            idealRanges.humidity_min != null &&
-            idealRanges.humidity_max != null &&
-            `Ideal: ${idealRanges.humidity_min}% – ${idealRanges.humidity_max}%`) ||
-          (key === "ph" &&
-            idealRanges.ph_min != null &&
-            idealRanges.ph_max != null &&
-            `Ideal: ${idealRanges.ph_min} – ${idealRanges.ph_max}`) ||
-          (key === "ppm" &&
-            idealRanges.ppm_min != null &&
-            idealRanges.ppm_max != null &&
-            `Ideal: ${idealRanges.ppm_min} – ${idealRanges.ppm_max}`));
+                    const idealText =
+                      idealRanges &&
+                      ((key === "temperature" &&
+                        idealRanges.temp_min != null &&
+                        idealRanges.temp_max != null &&
+                        `Ideal: ${idealRanges.temp_min}°C – ${idealRanges.temp_max}°C`) ||
+                        (key === "humidity" &&
+                          idealRanges.humidity_min != null &&
+                          idealRanges.humidity_max != null &&
+                          `Ideal: ${idealRanges.humidity_min}% – ${idealRanges.humidity_max}%`) ||
+                        (key === "ph" &&
+                          idealRanges.ph_min != null &&
+                          idealRanges.ph_max != null &&
+                          `Ideal: ${idealRanges.ph_min} – ${idealRanges.ph_max}`) ||
+                        (key === "ppm" &&
+                          idealRanges.ppm_min != null &&
+                          idealRanges.ppm_max != null &&
+                          `Ideal: ${idealRanges.ppm_min} – ${idealRanges.ppm_max}`));
 
-      return (
-        <div key={key} className={styles.sensorCardWrapper}>
-          <div className={styles.sensorCard}>
-            <div className={styles.sensorName}>
-              {sensorNames[key] || key}
-            </div>
+                    return (
+                      <div key={key} className={styles.sensorCardWrapper}>
+                        <div className={styles.sensorCard}>
+                          <div className={styles.sensorName}>
+                            {sensorNames[key] || key}
+                          </div>
 
-            <div className={`${styles.sensorValue} ${statusClass}`}>
-              {valueDisplay}
-            </div>
+                          <div className={`${styles.sensorValue} ${statusClass}`}>
+                            {valueDisplay}
+                          </div>
 
-            {/* Only show Ideal when valid */}
-            {idealText && (
-              <div className={styles.idealRange}>{idealText}</div>
-            )}
-          </div>
+                          {idealText && (
+                            <div className={styles.idealRange}>{idealText}</div>
+                          )}
+                        </div>
 
-          {/* PPM dilution warning */}
-          {key === "ppm" && status === "DILUTE_WATER" && (
-            <div className={styles.ppmWarning}>
-              <p className={styles.ppmWarningText}>
-                PPM TOO HIGH: Manual dilution required. Please add
-                distilled water to lower nutrient concentration.
-              </p>
-            </div>
-          )}
-        </div>
-      );
-    })}
-</div>
+                        {key === "ppm" && status === "DILUTE_WATER" && (
+                          <div className={styles.ppmWarning}>
+                            <p className={styles.ppmWarningText}>
+                              PPM TOO HIGH: Manual dilution required. Please add
+                              distilled water to lower nutrient concentration.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+
               {/* Abort */}
               <div className={styles.abortSection}>
                 <Button danger size="large" onClick={handleAbortPlant} style={{ fontWeight: "bold" }}>
@@ -747,7 +651,6 @@ export default function DashboardPage() {
                 >
                   View Historical Growth
                 </Button>
-                
               </div>
             </div>
 
