@@ -36,15 +36,27 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
   const [payload, setPayload] = useState(null);
   const [error, setError] = useState(null);
   const [isFetching, setIsFetching] = useState(false);
+
   const hasLoadedOnceRef = useRef(false);
   const abortRef = useRef(null);
   const lastGoodRowsRef = useRef([]); // keep last non-empty dataset
 
-  // refs to ChartJS instances (not react nodes)
+  // refs to ChartJS instances
   const tempRef = useRef(null);
   const humRef  = useRef(null);
   const ppmRef  = useRef(null);
   const phRef   = useRef(null);
+
+  // ---- DEBUG: mount/unmount tracing ----
+  useEffect(() => {
+    console.log('[HC] mounted at', new Date().toLocaleTimeString());
+    return () => console.log('[HC] unmounted at', new Date().toLocaleTimeString());
+  }, []);
+
+  // ---- DEBUG: show prop changes (should flip only when you open/close modal) ----
+  useEffect(() => {
+    console.log('[HC] show prop ->', show, 'at', new Date().toLocaleTimeString());
+  }, [show]);
 
   async function loadGrowth() {
     if (abortRef.current) abortRef.current.abort();
@@ -67,6 +79,9 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
         idealConditions: json?.idealConditions ?? null,
         selectionStartTime: json?.selectionStartTime ?? null,
       };
+
+      // ---- DEBUG: incoming row count per poll ----
+      console.log('[HC] fetched rows =', rows.length, 'at', new Date().toLocaleTimeString());
 
       if (rows.length > 0) {
         lastGoodRowsRef.current = rows;
@@ -123,7 +138,7 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
     return 'week';
   }, [rows, hasDataNow]);
 
-  // expose snapshots
+  // Snapshots for parent
   useImperativeHandle(ref, () => ({
     getSnapshots: () => {
       const grab = (r) => {
@@ -227,15 +242,11 @@ export default HistoricalCharts;
 
 /**
  * MetricChart
- * - Renders a single <Line> with a stable, minimal data/options object.
- * - On every update, we mutate the existing ChartJS instance:
- *     chart.data.datasets[0].data = points; update('none')
- *     chart.options.plugins.annotation.annotations = {...}; update('none')
- *     chart.options.plugins.title.text = '...'; update('none')
- * - This prevents any re-init flicker.
+ * - Renders a single <Line> and mutates the ChartJS instance in place.
+ * - Prevents re-init flicker by never replacing data/options objects during updates.
  */
 function MetricChart({ instRef, title, unit, field, rows, idealMin, idealMax, timeUnit }) {
-  // convert to points only; avoid building chart objects here
+  // map to points
   const points = useMemo(() => (
     rows
       .map(r => {
@@ -246,13 +257,13 @@ function MetricChart({ instRef, title, unit, field, rows, idealMin, idealMax, ti
       .filter(Boolean)
   ), [rows, field]);
 
-  // Build stable data/options ONCE; mutate the chart instance on changes
+  // stable data/options ONCE
   const baseData = useMemo(() => ({
     datasets: [
       {
-        datasetIdKey: 'main',        // keep identity fixed
-        label: title,                // initial; we also update title plugin text separately
-        data: [],                    // filled imperatively
+        datasetIdKey: 'main',
+        label: title,
+        data: [],
         parsing: false,
         borderWidth: 2,
         pointRadius: 0,
@@ -261,7 +272,6 @@ function MetricChart({ instRef, title, unit, field, rows, idealMin, idealMax, ti
         spanGaps: true,
       }
     ]
-  // only on first mount; title is also mirrored to plugin title
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 
@@ -273,7 +283,7 @@ function MetricChart({ instRef, title, unit, field, rows, idealMin, idealMax, ti
     transitions: { active: { animation: { duration: 0 } } },
     plugins: {
       legend: { display: false },
-      title: { display: true, text: '' },         // set imperatively
+      title: { display: true, text: '' },
       tooltip: {
         callbacks: {
           label: ctx => {
@@ -283,7 +293,7 @@ function MetricChart({ instRef, title, unit, field, rows, idealMin, idealMax, ti
           }
         }
       },
-      annotation: { annotations: {} }             // set imperatively
+      annotation: { annotations: {} }
     },
     interaction: { mode: 'nearest', intersect: false },
     scales: {
@@ -294,15 +304,16 @@ function MetricChart({ instRef, title, unit, field, rows, idealMin, idealMax, ti
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 
-  // Whenever points/ideals/timeUnit/title/unit change, mutate the chart instance
+  // update instance imperatively when inputs change
   useEffect(() => {
     const chart = instRef.current;
     if (!chart) return;
 
-    // Update data
+    // ---- DEBUG: confirm we are not recreating the canvas ----
+    console.log('[HC] updating chart', title, 'points=', points.length, 'unit=', timeUnit);
+
     chart.data.datasets[0].data = points;
 
-    // Update ideal band + title
     const annotations =
       (idealMin == null || idealMax == null || idealMin > idealMax)
         ? {}
@@ -320,22 +331,21 @@ function MetricChart({ instRef, title, unit, field, rows, idealMin, idealMax, ti
     chart.options.plugins.title.text =
       `${title}${unit ? `  (Ideal: ${idealMin ?? '—'}–${idealMax ?? '—'} ${unit})` : ''}`;
 
-    // Update x scale time unit if it changed
     if (chart.options.scales?.x?.time?.unit !== timeUnit) {
       chart.options.scales.x.time.unit = timeUnit;
     }
 
-    chart.update('none'); // no animation, no blink
+    chart.update('none');
   }, [points, idealMin, idealMax, timeUnit, title, unit, instRef]);
 
   return (
     <div style={{ height: 260, border: '1px solid #e5e7eb', borderRadius: 10, padding: 12 }}>
-      {/* IMPORTANT: use getDatasetAtEvent to ensure react-chartjs-2 gives us ChartJS instance in ref */}
       <Line
         ref={(node) => {
-          // react-chartjs-2 gives the ChartJS instance directly as ref (v5)
           if (node && node !== instRef.current) {
             instRef.current = node;
+            // ---- DEBUG: when ChartJS instance is first attached ----
+            console.log('[HC] chart instance ready for', title, 'at', new Date().toLocaleTimeString());
           }
         }}
         data={baseData}
