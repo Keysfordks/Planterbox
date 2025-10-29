@@ -30,18 +30,47 @@ ChartJS.register(
   annotationPlugin
 );
 
+/**
+ * Drop-in replacement for your existing HistoricalCharts component with:
+ * 1) A horizontal dashed line showing the CURRENT reading against the ideal band
+ * 2) Flicker-free updates by:
+ *    - Preserving previous payload while fetching
+ *    - Avoiding state updates if incoming data hasn't changed (signature compare)
+ *    - Keeping Chart.js datasets stable and updating without animations
+ */
 const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
   const [payload, setPayload] = useState(null);     // last good data
   const [error, setError] = useState(null);
   const [isFetching, setIsFetching] = useState(false);
   const hasLoadedOnceRef = useRef(false);
   const abortRef = useRef(null);
+  const signatureRef = useRef(''); // tracks last data signature to skip redundant state updates
 
   // refs to individual charts for snapshot
   const tempRef = useRef(null);
   const humRef  = useRef(null);
   const ppmRef  = useRef(null);
   const phRef   = useRef(null);
+
+  function makeSignature(json) {
+    // Build a lightweight signature of the historical rows and ideals to avoid unnecessary re-renders
+    const rows = Array.isArray(json?.historicalData) ? json.historicalData : [];
+    const ideals = json?.idealConditions ?? {};
+    const last = rows.length ? rows[rows.length - 1] : null;
+    const parts = [
+      rows.length,
+      last?.timestamp || 'none',
+      last?.temperature ?? 'x',
+      last?.humidity ?? 'x',
+      last?.ppm ?? 'x',
+      last?.ph ?? 'x',
+      ideals?.temp_min ?? 'x', ideals?.temp_max ?? 'x',
+      ideals?.humidity_min ?? 'x', ideals?.humidity_max ?? 'x',
+      ideals?.ppm_min ?? 'x', ideals?.ppm_max ?? 'x',
+      ideals?.ph_min ?? 'x', ideals?.ph_max ?? 'x',
+    ];
+    return parts.join('|');
+  }
 
   async function loadGrowth() {
     if (abortRef.current) abortRef.current.abort();
@@ -62,7 +91,14 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
         idealConditions: json?.idealConditions ?? null,
         selectionStartTime: json?.selectionStartTime ?? null,
       };
-      setPayload(nextPayload);
+
+      // Avoid updating state if nothing material changed
+      const sig = makeSignature(nextPayload);
+      if (sig !== signatureRef.current) {
+        signatureRef.current = sig;
+        setPayload(nextPayload);
+      }
+
       setError(null);
       hasLoadedOnceRef.current = true;
     } catch (e) {
@@ -101,11 +137,9 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
   // Expose snapshots to parent
   useImperativeHandle(ref, () => ({
     getSnapshots: () => {
-      // react-chartjs-2 exposes chart via ref.current
       const snap = (r) => {
         const inst = r?.current;
         if (!inst) return null;
-        // v5 uses ref to ChartJS instance, but with react-chartjs-2 we need .toBase64Image() from chart instance:
         const chart = inst?.canvas ? inst : inst?.chart || inst;
         try {
           const url = chart?.toBase64Image ? chart.toBase64Image('image/png', 1.0) : null;
@@ -209,8 +243,7 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
 
 export default HistoricalCharts;
 
-/** One chart with an ideal-range green band */
-/** One chart with an ideal-range green band (no flicker version) */
+/** One chart with an ideal-range green band + CURRENT value line (dashed) */
 function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, timeUnit }) {
   // map to points (x: Date, y: number)
   const points = useMemo(() => (
@@ -223,7 +256,12 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
       .filter(Boolean)
   ), [rows, field]);
 
-  // keep a stable dataset shape; just swap .data
+  // latest value for horizontal line
+  const latestValue = useMemo(() => (
+    points.length ? points[points.length - 1].y : null
+  ), [points]);
+
+  // Keep a stable dataset shape; just swap .data
   const data = useMemo(() => ({
     datasets: [
       {
@@ -234,35 +272,65 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
         pointRadius: 0,
         tension: 0.25,
         fill: false,
-        spanGaps: true,   // draw across missing bins
-        // skipNull: true, // (Chart.js v4 supports null skipping too)
-      }
-    ]
-  }), [points, title]);
+        spanGaps: true,
+      },
+      // optional single-point highlight of latest (tiny marker, no line)
+      latestValue != null ? {
+        label: 'current',
+        data: points.length ? [points[points.length - 1]] : [],
+        parsing: false,
+        borderWidth: 0,
+        pointRadius: 3,
+        showLine: false,
+      } : undefined,
+    ].filter(Boolean)
+  }), [points, title, latestValue]);
 
   const annotations = useMemo(() => {
-    if (idealMin == null || idealMax == null || idealMin > idealMax) return {};
-    return {
-      idealBand: {
+    const anns = {};
+    if (idealMin != null && idealMax != null && idealMin <= idealMax) {
+      anns.idealBand = {
         type: 'box',
         yMin: idealMin,
         yMax: idealMax,
         backgroundColor: 'rgba(16, 185, 129, 0.18)',
         borderWidth: 0,
-      }
-    };
-  }, [idealMin, idealMax]);
+      };
+    }
+    if (latestValue != null) {
+      anns.currentLine = {
+        type: 'line',
+        yMin: latestValue,
+        yMax: latestValue,
+        borderColor: 'rgba(59,130,246,0.9)',
+        borderWidth: 2,
+        borderDash: [6, 6],
+        label: {
+          enabled: true,
+          content: `Current: ${latestValue}${unit ? ` ${unit}` : ''}`,
+          position: 'start',
+          backgroundColor: 'rgba(255,255,255,0.7)',
+          color: '#1f2937',
+          padding: 4,
+          borderRadius: 6,
+        }
+      };
+    }
+    return anns;
+  }, [idealMin, idealMax, latestValue, unit]);
 
   const options = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     normalized: true,               // improve perf on large/irregular data
-    animation: { duration: 0 },     // no fade/flash during updates
+    animation: { duration: 0 },     // disable animations to prevent flicker
     transitions: { active: { animation: { duration: 0 } } },
     plugins: {
       legend: { display: false },
       title: { display: true, text: `${title}${unit ? `  (Ideal: ${idealMin ?? '—'}–${idealMax ?? '—'} ${unit})` : ''}` },
       tooltip: {
+        mode: 'nearest',
+        intersect: false,
         callbacks: {
           label: ctx => {
             const v = ctx.parsed.y;
@@ -281,14 +349,13 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
     elements: { line: { borderJoinStyle: 'round' } }
   }), [annotations, idealMin, idealMax, timeUnit, title, unit]);
 
-  // Always render the Line (no conditional), even if points are empty
+  // Always render the Line (no conditional), even if points are empty, to avoid mount/unmount flicker
   return (
     <div style={{ height: 260, border: '1px solid #e5e7eb', borderRadius: 10, padding: 12 }}>
       <Line ref={chartRef} data={data} options={options} updateMode="none" />
     </div>
   );
 }
-
 
 /* tiny css keyframes for skeleton (optional) */
 const style = typeof document !== 'undefined' && document.createElement('style');
