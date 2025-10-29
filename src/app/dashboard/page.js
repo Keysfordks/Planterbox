@@ -96,13 +96,6 @@ export default function DashboardPage() {
       }
     };
 
-    useEffect(() => {
-      console.log('showGraphModal ->', showGraphModal, 'at', new Date().toLocaleTimeString());
-    }, [showGraphModal]);
-
-
-    
-
     const fetchData = async () => {
       try {
         const res = await fetch("/api/sensordata");
@@ -120,6 +113,10 @@ export default function DashboardPage() {
     const intervalId = setInterval(fetchData, 3000);
     return () => clearInterval(intervalId);
   }, [selectedPlant, selectedStage]);
+
+    useEffect(() => {
+    console.log('showGraphModal ->', showGraphModal, 'at', new Date().toLocaleTimeString());
+  }, [showGraphModal]);
 
   const handleCreatePlant = async () => {
     try {
