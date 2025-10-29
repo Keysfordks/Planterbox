@@ -1,6 +1,8 @@
 'use client';
 
-import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import React, {
+  forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState
+} from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -36,8 +38,9 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
   const [isFetching, setIsFetching] = useState(false);
   const hasLoadedOnceRef = useRef(false);
   const abortRef = useRef(null);
-  const lastGoodRowsRef = useRef([]); // 👈 preserves last non-empty rows
+  const lastGoodRowsRef = useRef([]); // keep last non-empty dataset
 
+  // refs to ChartJS instances (not react nodes)
   const tempRef = useRef(null);
   const humRef  = useRef(null);
   const ppmRef  = useRef(null);
@@ -92,7 +95,7 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
     }
   }
 
-  // Poll every 5s while visible; charts stay mounted the whole time.
+  // Poll every 5s while visible
   useEffect(() => {
     if (!show) return;
     let timer;
@@ -110,32 +113,28 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
   const isInitialLoading = !hasLoadedOnceRef.current && !error && !hasDataNow;
 
   const timeUnit = useMemo(() => {
-    if (!hasDataNow) return 'hour';
-    const first = new Date(rows[0].timestamp).getTime();
-    const last  = new Date(rows[rows.length - 1].timestamp).getTime();
+    const src = hasDataNow ? rows : lastGoodRowsRef.current;
+    if (!src || src.length < 2) return 'hour';
+    const first = new Date(src[0].timestamp).getTime();
+    const last  = new Date(src[src.length - 1].timestamp).getTime();
     const spanHours = Math.max(1, (last - first) / 36e5);
     if (spanHours <= 24) return 'hour';
     if (spanHours <= 24 * 14) return 'day';
     return 'week';
   }, [rows, hasDataNow]);
 
+  // expose snapshots
   useImperativeHandle(ref, () => ({
     getSnapshots: () => {
-      const snap = (r) => {
-        const inst = r?.current;
-        if (!inst) return null;
-        const chart = inst?.canvas ? inst : inst?.chart || inst;
-        try {
-          return chart?.toBase64Image ? chart.toBase64Image('image/png', 1.0) : null;
-        } catch {
-          return null;
-        }
+      const grab = (r) => {
+        const chart = r?.current;
+        try { return chart?.toBase64Image?.('image/png', 1.0) ?? null; } catch { return null; }
       };
       return {
-        temperature: snap(tempRef),
-        humidity:    snap(humRef),
-        ppm:         snap(ppmRef),
-        ph:          snap(phRef),
+        temperature: grab(tempRef),
+        humidity:    grab(humRef),
+        ppm:         grab(ppmRef),
+        ph:          grab(phRef),
       };
     }
   }), []);
@@ -153,7 +152,7 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
       {hasDataEver ? (
         <div style={{ display: 'grid', gap: 24 }}>
           <MetricChart
-            chartRef={tempRef}
+            instRef={tempRef}
             title="Temperature (°C)"
             unit="°C"
             field="temperature"
@@ -163,7 +162,7 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
             timeUnit={timeUnit}
           />
           <MetricChart
-            chartRef={humRef}
+            instRef={humRef}
             title="Humidity (%)"
             unit="%"
             field="humidity"
@@ -173,7 +172,7 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
             timeUnit={timeUnit}
           />
           <MetricChart
-            chartRef={ppmRef}
+            instRef={ppmRef}
             title="PPM (Nutrients)"
             unit=""
             field="ppm"
@@ -183,7 +182,7 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
             timeUnit={timeUnit}
           />
           <MetricChart
-            chartRef={phRef}
+            instRef={phRef}
             title="pH Level"
             unit=""
             field="ph"
@@ -226,8 +225,17 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
 
 export default HistoricalCharts;
 
-/** One chart with an ideal-range green band (no flicker version) */
-function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, timeUnit }) {
+/**
+ * MetricChart
+ * - Renders a single <Line> with a stable, minimal data/options object.
+ * - On every update, we mutate the existing ChartJS instance:
+ *     chart.data.datasets[0].data = points; update('none')
+ *     chart.options.plugins.annotation.annotations = {...}; update('none')
+ *     chart.options.plugins.title.text = '...'; update('none')
+ * - This prevents any re-init flicker.
+ */
+function MetricChart({ instRef, title, unit, field, rows, idealMin, idealMax, timeUnit }) {
+  // convert to points only; avoid building chart objects here
   const points = useMemo(() => (
     rows
       .map(r => {
@@ -238,11 +246,13 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
       .filter(Boolean)
   ), [rows, field]);
 
-  const data = useMemo(() => ({
+  // Build stable data/options ONCE; mutate the chart instance on changes
+  const baseData = useMemo(() => ({
     datasets: [
       {
-        label: title,
-        data: points,
+        datasetIdKey: 'main',        // keep identity fixed
+        label: title,                // initial; we also update title plugin text separately
+        data: [],                    // filled imperatively
         parsing: false,
         borderWidth: 2,
         pointRadius: 0,
@@ -251,22 +261,11 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
         spanGaps: true,
       }
     ]
-  }), [points, title]);
+  // only on first mount; title is also mirrored to plugin title
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
 
-  const annotations = useMemo(() => {
-    if (idealMin == null || idealMax == null || idealMin > idealMax) return {};
-    return {
-      idealBand: {
-        type: 'box',
-        yMin: idealMin,
-        yMax: idealMax,
-        backgroundColor: 'rgba(16, 185, 129, 0.18)',
-        borderWidth: 0,
-      }
-    };
-  }, [idealMin, idealMax]);
-
-  const options = useMemo(() => ({
+  const baseOptions = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     normalized: true,
@@ -274,10 +273,7 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
     transitions: { active: { animation: { duration: 0 } } },
     plugins: {
       legend: { display: false },
-      title: {
-        display: true,
-        text: `${title}${unit ? `  (Ideal: ${idealMin ?? '—'}–${idealMax ?? '—'} ${unit})` : ''}`
-      },
+      title: { display: true, text: '' },         // set imperatively
       tooltip: {
         callbacks: {
           label: ctx => {
@@ -287,7 +283,7 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
           }
         }
       },
-      annotation: { annotations }
+      annotation: { annotations: {} }             // set imperatively
     },
     interaction: { mode: 'nearest', intersect: false },
     scales: {
@@ -295,15 +291,61 @@ function MetricChart({ chartRef, title, unit, field, rows, idealMin, idealMax, t
       y: { beginAtZero: false, grid: { color: 'rgba(0,0,0,0.08)' }, ticks: { callback: v => `${v}${unit ? ` ${unit}` : ''}` } }
     },
     elements: { line: { borderJoinStyle: 'round' } }
-  }), [annotations, idealMin, idealMax, timeUnit, title, unit]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
+  // Whenever points/ideals/timeUnit/title/unit change, mutate the chart instance
+  useEffect(() => {
+    const chart = instRef.current;
+    if (!chart) return;
+
+    // Update data
+    chart.data.datasets[0].data = points;
+
+    // Update ideal band + title
+    const annotations =
+      (idealMin == null || idealMax == null || idealMin > idealMax)
+        ? {}
+        : {
+            idealBand: {
+              type: 'box',
+              yMin: idealMin,
+              yMax: idealMax,
+              backgroundColor: 'rgba(16, 185, 129, 0.18)',
+              borderWidth: 0,
+            }
+          };
+
+    chart.options.plugins.annotation.annotations = annotations;
+    chart.options.plugins.title.text =
+      `${title}${unit ? `  (Ideal: ${idealMin ?? '—'}–${idealMax ?? '—'} ${unit})` : ''}`;
+
+    // Update x scale time unit if it changed
+    if (chart.options.scales?.x?.time?.unit !== timeUnit) {
+      chart.options.scales.x.time.unit = timeUnit;
+    }
+
+    chart.update('none'); // no animation, no blink
+  }, [points, idealMin, idealMax, timeUnit, title, unit, instRef]);
 
   return (
     <div style={{ height: 260, border: '1px solid #e5e7eb', borderRadius: 10, padding: 12 }}>
-      <Line ref={chartRef} data={data} options={options} updateMode="none" />
+      {/* IMPORTANT: use getDatasetAtEvent to ensure react-chartjs-2 gives us ChartJS instance in ref */}
+      <Line
+        ref={(node) => {
+          // react-chartjs-2 gives the ChartJS instance directly as ref (v5)
+          if (node && node !== instRef.current) {
+            instRef.current = node;
+          }
+        }}
+        data={baseData}
+        options={baseOptions}
+      />
     </div>
   );
 }
 
+/* tiny css keyframes for skeleton (optional) */
 if (typeof document !== 'undefined') {
   const style = document.createElement('style');
   style.innerHTML = `@keyframes pulse { 0%,100%{opacity:.6} 50%{opacity:1} }`;
