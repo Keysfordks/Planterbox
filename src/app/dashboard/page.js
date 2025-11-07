@@ -43,9 +43,6 @@ export default function DashboardPage() {
   const [sensorStatus, setSensorStatus] = useState({});
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  // NEW: track grow-session start (used by HistoricalCharts)
-  const [plantStartTs, setPlantStartTs] = useState(null);
-
   // Historical chart modal + ref for snapshots
   const [showGraphModal, setShowGraphModal] = useState(false);
   const chartsRef = useRef(null);
@@ -75,18 +72,15 @@ export default function DashboardPage() {
     if (status === "authenticated") fetchPlantPresets();
   }, [status, router]);
 
-  // Restore selection + session start from localStorage
   useEffect(() => {
     const savedPlant = localStorage.getItem("selectedPlant");
     const savedStage = localStorage.getItem("selectedStage");
-    const savedStart = localStorage.getItem("plantStartTs");
     if (savedPlant) setSelectedPlant(savedPlant);
     if (savedStage) {
       setSelectedStage(savedStage);
       setDropdownStage(savedStage);
       setNewStage(savedStage);
     }
-    if (savedStart) setPlantStartTs(Number(savedStart));
   }, []);
 
   useEffect(() => {
@@ -126,7 +120,7 @@ export default function DashboardPage() {
     console.log('showGraphModal ->', showGraphModal, 'at', new Date().toLocaleTimeString());
   }, [showGraphModal]);
 
-  // === keep your existing selection update, but START the session ===
+  // === keep your existing selection update ===
   const handlePlantSelection = async (plantName, stageName) => {
     try {
       const response = await fetch("/api/sensordata", {
@@ -139,17 +133,11 @@ export default function DashboardPage() {
         }),
       });
       if (!response.ok) throw new Error("Failed to save plant selection");
-
-      const ts = Date.now();                // <-- NEW: mark session start
       setSelectedPlant(plantName);
       setSelectedStage(stageName);
       setNewStage(stageName);
-      setPlantStartTs(ts);                  // <-- NEW
-
       localStorage.setItem("selectedPlant", plantName);
       localStorage.setItem("selectedStage", stageName);
-      localStorage.setItem("plantStartTs", String(ts));   // <-- NEW
-
       message.success(`${plantName} (${stageName}) selected successfully!`);
     } catch (error) {
       console.error("Failed to send plant selection/stage update:", error);
@@ -174,18 +162,12 @@ export default function DashboardPage() {
 
       setSelectedPlant(null);
       setSelectedStage(null);
+      localStorage.removeItem("selectedPlant");
+      localStorage.removeItem("selectedStage");
       setSensorData({});
       setIdealConditions({});
       setDropdownStage("seedling");
       setNewStage("seedling");
-
-      // NEW: clear session start
-      setPlantStartTs(null);
-      localStorage.removeItem("plantStartTs");
-
-      localStorage.removeItem("selectedPlant");
-      localStorage.removeItem("selectedStage");
-
       setShowPlantModal(true);
       message.success("Plant aborted and archived");
     } catch (error) {
@@ -237,7 +219,7 @@ export default function DashboardPage() {
           if (!res.ok) throw new Error(`Failed to create ${stage} profile`);
         }
 
-        // Select the initial stage as usual (will set plantStartTs)
+        // Select the initial stage as usual
         await handlePlantSelection(values.customPlantName, initialStage);
 
         setSelectedPlant(values.customPlantName);
@@ -558,15 +540,13 @@ export default function DashboardPage() {
             alignItems: 'center',
             justifyContent: 'space-between'
           }}>
-            <span style={{ fontWeight: 600 }}>
-              Historical Growth{plantStartTs ? ` — since ${new Date(plantStartTs).toLocaleString()}` : ""}
-            </span>
+            <span style={{ fontWeight: 600 }}>Historical Growth</span>
             <Button onClick={() => setShowGraphModal(false)}>Close</Button>
           </div>
 
           {/* Content: charts remain mounted forever */}
           <div style={{ padding: 12, overflow: 'auto', flex: 1 }}>
-            <HistoricalCharts ref={chartsRef} show={showGraphModal} plantStartTs={plantStartTs} />
+            <HistoricalCharts ref={chartsRef} show={showGraphModal} />
           </div>
         </div>
       </div>

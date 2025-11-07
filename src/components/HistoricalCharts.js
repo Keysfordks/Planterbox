@@ -32,6 +32,7 @@ ChartJS.register(
   annotationPlugin
 );
 
+const WINDOW_MS = 6 * 60 * 60 * 1000; // last 6 hours
 
 const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
   const [error, setError] = useState(null);
@@ -99,8 +100,8 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
       }
 
       // Trim to sliding window
+      const cutoff = Date.now() - WINDOW_MS;
       if (accumRowsRef.current.length) {
-        const cutoff = Number(plantStartTs) || 0; // 0 => keep all if not set
         accumRowsRef.current = accumRowsRef.current
           .filter(r => r.timestamp >= cutoff)
           .sort((a, b) => a.timestamp - b.timestamp);
@@ -122,6 +123,7 @@ const HistoricalCharts = forwardRef(function HistoricalCharts({ show }, ref) {
 
   // Poll while visible
   useEffect(() => {
+    if (!show) return;
     let timer;
     (async () => {
       await loadGrowth();
