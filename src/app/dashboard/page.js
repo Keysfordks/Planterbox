@@ -1,14 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Card, Avatar, Spin, message, Select, Button, Alert, Tooltip, Modal, Space, Typography, Divider, Input, Form} from "antd";
+import {
+  Card, Avatar, Spin, message, Select, Button, Alert, Tooltip, Modal,
+  Typography, Divider, Input, Form, InputNumber, Row, Col
+} from "antd";
 import Navbar from "../../components/navbar";
 import styles from "../../styles/dashboard.module.css";
-import { FaInfoCircle, FaExclamationTriangle, FaSync, FaChartLine, FaLeaf, FaSeedling,} from "react-icons/fa";
+import { FaInfoCircle, FaLeaf } from "react-icons/fa";
+
+// Charts (exposes ref.getSnapshots())
+import HistoricalCharts from "../../components/HistoricalCharts";
+// Past Grows grid
+import PastGrowsGrid from "../../components/PastGrowsGrid";
 
 const { Title, Text, Paragraph } = Typography;
+const { Option } = Select;
 
 const sensorNames = {
   temperature: "Temperature (°C)",
@@ -20,81 +29,38 @@ const sensorNames = {
 
 const GROWTH_STAGES = ["seedling", "vegetative", "mature"];
 
-const { Option } = Select;
-
-// Growth Graph Component
-const GrowthGraph = ({ data }) => {
-  if (!data || data.length === 0) {
-    return (
-      <div className={styles.graphEmpty}>
-        No historical data available yet. Keep monitoring!
-      </div>
-    );
-  }
-
-  const firstTimestamp = new Date(data[0].timestamp);
-  const lastTimestamp = new Date(data[data.length - 1].timestamp);
-  const daysOfData = Math.ceil(
-    (lastTimestamp - firstTimestamp) / (1000 * 60 * 60 * 24)
-  );
-
-  return (
-    <div className={styles.graphContainer}>
-      <h3 className={styles.graphTitle}>
-        Growth Trend ({daysOfData} Days)
-      </h3>
-      <div className={styles.graphPlaceholder}>
-        <p className={styles.graphPlaceholderTitle}>
-          [Placeholder for Chart Library]
-        </p>
-        <ul className={styles.graphPlaceholderList}>
-          <li>
-            This chart would display a multi-series line graph for pH, PPM, and
-            Temp.
-          </li>
-          <li>Data points: {data.length} records fetched.</li>
-          <li>
-            Time Range: {firstTimestamp.toLocaleDateString()} to{" "}
-            {lastTimestamp.toLocaleDateString()}
-          </li>
-        </ul>
-      </div>
-      <p className={styles.graphFooter}>
-        A charting library is required here to visualize the data.
-      </p>
-    </div>
-  );
-};
-
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+
   const [selectedPlant, setSelectedPlant] = useState(null);
   const [selectedStage, setSelectedStage] = useState(null);
   const [dropdownStage, setDropdownStage] = useState("seedling");
   const [newStage, setNewStage] = useState("seedling");
+
   const [sensorData, setSensorData] = useState({});
   const [idealConditions, setIdealConditions] = useState({});
   const [sensorStatus, setSensorStatus] = useState({});
   const [lastUpdated, setLastUpdated] = useState(null);
+
+  // Historical chart modal + ref for snapshots
   const [showGraphModal, setShowGraphModal] = useState(false);
-  const [historicalData, setHistoricalData] = useState(null);
-  const [graphLoading, setGraphLoading] = useState(false);
+  const chartsRef = useRef(null);
+
+  // Plant creation modal/presets
   const [showPlantModal, setShowPlantModal] = useState(false);
   const [availablePresets, setAvailablePresets] = useState([]);
   const [selectedPreset, setSelectedPreset] = useState(null);
+  const [isCustomPlant, setIsCustomPlant] = useState(false);
   const [form] = Form.useForm();
 
-  // Fetch plant presets from database
+  // Fetch plant presets (unchanged; your API can keep returning an empty list for now)
   const fetchPlantPresets = async () => {
     try {
       const response = await fetch("/api/plants?presets=true");
-      if (response.ok) {
-        const data = await response.json();
-        setAvailablePresets(data.presets || []);
-      } else {
-        message.error("Failed to load plant presets");
-      }
+      if (!response.ok) throw new Error("Failed to load plant presets");
+      const data = await response.json();
+      setAvailablePresets(data.presets || []);
     } catch (error) {
       console.error("Error fetching presets:", error);
       message.error("Error loading plant presets");
@@ -102,25 +68,14 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/signin");
-    }
-    
-    if (status === "authenticated") {
-      fetchPlantPresets();
-    }
+    if (status === "unauthenticated") router.push("/signin");
+    if (status === "authenticated") fetchPlantPresets();
   }, [status, router]);
 
   useEffect(() => {
     const savedPlant = localStorage.getItem("selectedPlant");
     const savedStage = localStorage.getItem("selectedStage");
-
-    if (savedPlant) {
-      setSelectedPlant(savedPlant);
-    } else {
-      setShowPlantModal(true);
-    }
-    
+    if (savedPlant) setSelectedPlant(savedPlant);
     if (savedStage) {
       setSelectedStage(savedStage);
       setDropdownStage(savedStage);
@@ -133,79 +88,39 @@ export default function DashboardPage() {
 
     const fetchIdealConditions = async () => {
       try {
-        const response = await fetch(
-          `/api/sensordata?plant=${selectedPlant}&stage=${selectedStage}`
-        );
-        const data = await response.json();
+        // existing endpoint you already have
+        const res = await fetch(`/api/sensordata?plant=${selectedPlant}&stage=${selectedStage}`);
+        const data = await res.json();
         setIdealConditions(data.ideal_conditions);
-      } catch (error) {
-        console.error("Failed to fetch ideal conditions:", error);
+      } catch (e) {
+        console.error("Failed to fetch ideal conditions:", e);
       }
     };
 
     const fetchData = async () => {
       try {
-        const response = await fetch("/api/sensordata");
-        const data = await response.json();
+        const res = await fetch("/api/sensordata");
+        const data = await res.json();
         setSensorData(data.sensorData);
         setSensorStatus(data.sensorStatus);
         setLastUpdated(new Date().toLocaleTimeString());
-      } catch (error) {
-        console.error("Failed to fetch sensor data:", error);
+      } catch (e) {
+        console.error("Failed to fetch sensor data:", e);
       }
     };
 
     fetchIdealConditions();
     fetchData();
-    const intervalId = setInterval(() => {
-      fetchData();
-    }, 3000);
-
+    const intervalId = setInterval(fetchData, 3000);
     return () => clearInterval(intervalId);
   }, [selectedPlant, selectedStage]);
 
-  const handleCreatePlant = async () => {
-    try {
-      const values = await form.validateFields();
-      
-      if (!selectedPreset) {
-        message.error("Please select a plant type");
-        return;
-      }
+  // Debug: log modal open prop changes
+  useEffect(() => {
+    console.log('showGraphModal ->', showGraphModal, 'at', new Date().toLocaleTimeString());
+  }, [showGraphModal]);
 
-      // Fetch the ideal conditions for the selected preset AND stage
-      const presetResponse = await fetch(`/api/plants?presets=true&plant=${selectedPreset.plant_name}&stage=${dropdownStage}`);
-      const presetData = await presetResponse.json();
-
-      const response = await fetch("/api/plants", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          plant_name: values.customPlantName,
-          preset_type: selectedPreset.plant_name,
-          stage: dropdownStage,
-          ideal_conditions: presetData.ideal_conditions || selectedPreset.ideal_conditions,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setSelectedPlant(data.plant.plant_name);
-        setSelectedStage(dropdownStage);
-        setNewStage(dropdownStage);
-        localStorage.setItem("selectedPlant", data.plant.plant_name);
-        localStorage.setItem("selectedStage", dropdownStage);
-        setShowPlantModal(false);
-        message.success(`${values.customPlantName} created successfully!`);
-      } else {
-        message.error("Failed to create plant");
-      }
-    } catch (error) {
-      console.error("Error creating plant:", error);
-      message.error("Please fill in all required fields");
-    }
-  };
-
+  // === keep your existing selection update ===
   const handlePlantSelection = async (plantName, stageName) => {
     try {
       const response = await fetch("/api/sensordata", {
@@ -217,17 +132,13 @@ export default function DashboardPage() {
           selectedStage: stageName,
         }),
       });
-      if (response.ok) {
-        setSelectedPlant(plantName);
-        setSelectedStage(stageName);
-        setNewStage(stageName);
-        localStorage.setItem("selectedPlant", plantName);
-        localStorage.setItem("selectedStage", stageName);
-        message.success(`${plantName} (${stageName}) selected successfully!`);
-      } else {
-        console.error("Failed to save plant selection/stage update.");
-        message.error("Failed to save plant selection");
-      }
+      if (!response.ok) throw new Error("Failed to save plant selection");
+      setSelectedPlant(plantName);
+      setSelectedStage(stageName);
+      setNewStage(stageName);
+      localStorage.setItem("selectedPlant", plantName);
+      localStorage.setItem("selectedStage", stageName);
+      message.success(`${plantName} (${stageName}) selected successfully!`);
     } catch (error) {
       console.error("Failed to send plant selection/stage update:", error);
       message.error("Error selecting plant");
@@ -240,198 +151,129 @@ export default function DashboardPage() {
 
   const handleAbortPlant = async () => {
     try {
+      const snapshots = chartsRef.current?.getSnapshots?.() || null;
       const response = await fetch("/api/sensordata", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ action: "abort_plant" }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "abort_plant", snapshots }),
       });
 
-      if (response.ok) {
-        setSelectedPlant(null);
-        setSelectedStage(null);
-        localStorage.removeItem("selectedPlant");
-        localStorage.removeItem("selectedStage");
-        setSensorData({});
-        setIdealConditions({});
-        setDropdownStage("seedling");
-        setNewStage("seedling");
-        setShowPlantModal(true);
-        message.success("Plant aborted successfully");
-      } else {
-        console.error("Failed to abort plant.");
-        message.error("Failed to abort plant");
-      }
+      if (!response.ok) throw new Error("Failed to abort plant");
+
+      setSelectedPlant(null);
+      setSelectedStage(null);
+      localStorage.removeItem("selectedPlant");
+      localStorage.removeItem("selectedStage");
+      setSensorData({});
+      setIdealConditions({});
+      setDropdownStage("seedling");
+      setNewStage("seedling");
+      setShowPlantModal(true);
+      message.success("Plant aborted and archived");
     } catch (error) {
       console.error("Request failed:", error);
       message.error("Error aborting plant");
     }
   };
 
-  const fetchHistoricalData = async () => {
-    setGraphLoading(true);
+  const openHistoricalGraph = () => setShowGraphModal(true);
+
+  // === CREATE PLANT: no backend changes, create 3 docs when custom ===
+  const handleCreatePlant = async () => {
     try {
-      const response = await fetch("/api/sensordata?growth=true");
-      const data = await response.json();
-      setHistoricalData(data.historicalData);
-      setShowGraphModal(true);
+      const values = await form.validateFields();
+      const initialStage = dropdownStage;
+
+      // helper to ensure numbers are numbers
+      const build = (obj) => ({
+        temp_min: Number(obj.temp_min),
+        temp_max: Number(obj.temp_max),
+        humidity_min: Number(obj.humidity_min),
+        humidity_max: Number(obj.humidity_max),
+        ph_min: Number(obj.ph_min),
+        ph_max: Number(obj.ph_max),
+        ppm_min: Number(obj.ppm_min),
+        ppm_max: Number(obj.ppm_max),
+        light_pwm_cycle: Number(obj.light_pwm_cycle),
+      });
+
+      if (isCustomPlant) {
+        const stageDefs = {
+          seedling: build(values.seedling),
+          vegetative: build(values.vegetative),
+          mature: build(values.mature),
+        };
+
+        // POST to your existing /api/plants three times (same plant_name, different stage)
+        for (const stage of GROWTH_STAGES) {
+          const res = await fetch("/api/plants", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              plant_name: values.customPlantName,
+              preset_type: "custom",
+              stage,
+              ideal_conditions: stageDefs[stage],
+            }),
+          });
+          if (!res.ok) throw new Error(`Failed to create ${stage} profile`);
+        }
+
+        // Select the initial stage as usual
+        await handlePlantSelection(values.customPlantName, initialStage);
+
+        setSelectedPlant(values.customPlantName);
+        setSelectedStage(initialStage);
+        setNewStage(initialStage);
+        localStorage.setItem("selectedPlant", values.customPlantName);
+        localStorage.setItem("selectedStage", initialStage);
+
+        setShowPlantModal(false);
+        setIsCustomPlant(false);
+        form.resetFields();
+        message.success(`${values.customPlantName} created with 3-stage profiles!`);
+        return;
+      }
+
+      // ---- Preset path (unchanged) ----
+      if (!selectedPreset) {
+        message.error("Please select a plant type");
+        return;
+      }
+      const presetResponse = await fetch(
+        `/api/plants?presets=true&plant=${selectedPreset.plant_name}&stage=${initialStage}`
+      );
+      const presetData = await presetResponse.json();
+      const idealConditionsToUse =
+        presetData.ideal_conditions || selectedPreset.ideal_conditions;
+
+      const response = await fetch("/api/plants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plant_name: values.customPlantName,
+          preset_type: selectedPreset.plant_name,
+          stage: initialStage,
+          ideal_conditions: idealConditionsToUse,
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to create plant");
+
+      await handlePlantSelection(values.customPlantName, initialStage);
+      setSelectedPlant(values.customPlantName);
+      setSelectedStage(initialStage);
+      setNewStage(initialStage);
+      localStorage.setItem("selectedPlant", values.customPlantName);
+      localStorage.setItem("selectedStage", initialStage);
+      setShowPlantModal(false);
+      setIsCustomPlant(false);
+      form.resetFields();
+      message.success(`${values.customPlantName} created successfully!`);
     } catch (error) {
-      console.error("Failed to fetch historical data:", error);
-      message.error("Failed to load growth data");
-    } finally {
-      setGraphLoading(false);
+      console.error("Error creating plant:", error);
+      message.error("Please fill in all required fields");
     }
   };
-
-  const GrowthModal = () => (
-    <div className={styles.graphModal}>
-      <div className={styles.graphModalContent}>
-        <button
-          onClick={() => setShowGraphModal(false)}
-          className={styles.graphModalClose}
-        >
-          &times;
-        </button>
-        <GrowthGraph data={historicalData} />
-      </div>
-    </div>
-  );
-
-  const PlantCreationModal = () => (
-    <Modal
-      open={showPlantModal}
-      onCancel={() => {
-        if (selectedPlant && selectedStage) {
-          setShowPlantModal(false);
-        } else {
-          message.warning("Please create a plant to continue");
-        }
-      }}
-      footer={null}
-      width={600}
-      centered
-      closable={selectedPlant && selectedStage}
-      maskClosable={false}
-    >
-      <div style={{ textAlign: 'center', padding: '20px 0' }}>
-        
-        <Title level={2} style={{ marginBottom: '8px' }}>
-          🌱 Create Your Plant
-        </Title>
-        
-        <Paragraph style={{ fontSize: '16px', color: '#6b7280', marginBottom: '32px' }}>
-          Choose a plant preset and give your plant a custom name to begin monitoring.
-        </Paragraph>
-
-        <Form
-          form={form}
-          layout="vertical"
-          style={{ maxWidth: '400px', margin: '0 auto' }}
-        >
-          <Form.Item
-            name="customPlantName"
-            label={<Text strong>Plant Name</Text>}
-            rules={[{ required: true, message: 'Please enter a name for your plant' }]}
-          >
-            <Input
-              size="large"
-              placeholder="e.g., My Pothos Plant"
-              prefix={<FaSeedling style={{ color: '#10b981' }} />}
-            />
-          </Form.Item>
-
-          <Form.Item
-            label={<Text strong>Plant Type (Preset)</Text>}
-            required
-          >
-            <Select
-              size="large"
-              placeholder="Choose a plant preset"
-              value={selectedPreset?.plant_name}
-              onChange={(value) => {
-                const preset = availablePresets.find(p => p.plant_name === value);
-                setSelectedPreset(preset);
-              }}
-              style={{ width: '100%' }}
-            >
-              {availablePresets.map((preset) => (
-                <Option key={preset._id} value={preset.plant_name}>
-                  🌿 {preset.plant_name.charAt(0).toUpperCase() + preset.plant_name.slice(1)}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            label={
-              <Text strong style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                Growth Stage
-                <Tooltip 
-                  title="Our kit groups plant growth into 3 broad stages. Click to learn more about each stage."
-                  placement="right"
-                >
-                  <a
-                    href="https://www.saferbrand.com/articles/plant-growth-stages"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: '#10b981' }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <FaInfoCircle />
-                  </a>
-                </Tooltip>
-              </Text>
-            }
-          >
-            <Select
-              size="large"
-              value={dropdownStage}
-              onChange={(value) => setDropdownStage(value)}
-              style={{ width: '100%' }}
-            >
-              {GROWTH_STAGES.map((stage) => (
-                <Option key={stage} value={stage}>
-                  {stage === 'seedling' && '🌱'}
-                  {stage === 'vegetative' && '🌿'}
-                  {stage === 'mature' && '🌳'}
-                  {' '}
-                  {stage.charAt(0).toUpperCase() + stage.slice(1)} Stage
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Divider style={{ margin: '16px 0' }} />
-
-          <Alert
-            message="Setup Instructions"
-            description="Ensure the hydroponics tank is filled to the marked range with distilled water before starting. Add more water as required during operation."
-            type="info"
-            showIcon
-            style={{ textAlign: 'left', marginBottom: '16px' }}
-          />
-
-          <Button
-            type="primary"
-            size="large"
-            icon={<FaLeaf />}
-            onClick={handleCreatePlant}
-            block
-            style={{ 
-              height: '48px',
-              fontSize: '16px',
-              fontWeight: 'bold',
-              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-              border: 'none',
-            }}
-          >
-            Create & Start Monitoring
-          </Button>
-        </Form>
-      </div>
-    </Modal>
-  );
 
   if (status === "loading") {
     return (
@@ -441,17 +283,16 @@ export default function DashboardPage() {
     );
   }
 
-  if (!session) {
-    return null;
-  }
+  if (!session) return null;
 
-  const headerText = selectedPlant && selectedStage
-    ? `${selectedPlant.charAt(0).toUpperCase() + selectedPlant.slice(1)} - ${
-        selectedStage.charAt(0).toUpperCase() + selectedStage.slice(1)
-      } Stage`
-    : "Plant Dashboard";
+  const headerText =
+    selectedPlant && selectedStage
+      ? `${selectedPlant.charAt(0).toUpperCase() + selectedPlant.slice(1)} - ${
+          selectedStage.charAt(0).toUpperCase() + selectedStage.slice(1)
+        } Stage`
+      : "Plant Dashboard";
 
-  const { _id, timestamp, pump, light, tds, distance, ...sensors } = sensorData;
+  const { _id, timestamp, pump, light, tds, distance, ...sensors } = sensorData || {};
   const { light_pwm_cycle, ...idealRanges } = idealConditions || {};
 
   return (
@@ -461,15 +302,9 @@ export default function DashboardPage() {
       <main className={styles.main}>
         <Card className={styles.welcomeCard}>
           <div className={styles.welcomeContent}>
-            <Avatar
-              src={session.user?.image}
-              size={64}
-              className={styles.avatar}
-            />
+            <Avatar src={session.user?.image} size={64} className={styles.avatar} />
             <div>
-              <h2 className={styles.welcomeTitle}>
-                Welcome back, {session.user?.name || "User"}!
-              </h2>
+              <h2 className={styles.welcomeTitle}>Welcome back, {session.user?.name || "User"}!</h2>
               <p className={styles.welcomeEmail}>{session.user?.email}</p>
             </div>
           </div>
@@ -479,19 +314,11 @@ export default function DashboardPage() {
           <div className={styles.infoGrid}>
             <div className={styles.infoItem}>
               <p className={styles.infoLabel}>Name</p>
-              <p className={styles.infoValue}>
-                {session.user?.name || "Not provided"}
-              </p>
+              <p className={styles.infoValue}>{session.user?.name || "Not provided"}</p>
             </div>
             <div className={styles.infoItem}>
               <p className={styles.infoLabel}>Email</p>
-              <p className={styles.infoValue}>
-                {session.user?.email || "Not provided"}
-              </p>
-            </div>
-            <div className={styles.infoItem}>
-              <p className={styles.infoLabel}>Account Id</p>
-              <p className={styles.infoValue}>{session.user.id}</p>
+              <p className={styles.infoValue}>{session.user?.email || "Not provided"}</p>
             </div>
           </div>
         </Card>
@@ -503,111 +330,120 @@ export default function DashboardPage() {
           </div>
 
           {selectedPlant && selectedStage ? (
-            /* Sensor Monitoring View */
             <>
-              <p className={styles.lastUpdated}>
-                Last updated: {lastUpdated}
-              </p>
+              <p className={styles.lastUpdated}>Last updated: {lastUpdated}</p>
 
-              {/* Sensor Cards Section */}
+              {/* Sensor Cards */}
               <div className={styles.sensorGrid}>
-                {Object.keys(sensors).map((key) => {
-                  const value = sensors[key];
-                  const status = sensorStatus[key] || "Loading...";
+                {Object.keys(sensors)
+                  .filter(
+                    (key) =>
+                      ![
+                        "userId",
+                        "default_device",
+                        "deviceId",
+                        "_id",
+                        "__v",
+                        "timestamp",
+                        "idealRanges",
+                      ].includes(key)
+                  )
+                  .map((key) => {
+                    const value = sensors[key];
+                    const status = sensorStatus[key] || "Loading...";
 
-                  let statusClass = styles.ideal;
-                  let valueDisplay;
+                    let statusClass = styles.ideal;
+                    let valueDisplay;
 
-                  if (key === "water_sufficient") {
-                    valueDisplay = value ? "IDEAL" : "TOO LOW";
-                    statusClass = value ? styles.ideal : styles.warning;
-                  } else if (key === "ppm" && status === "DILUTE_WATER") {
-                    valueDisplay =
-                      value !== null ? parseFloat(value).toFixed(2) : "Loading...";
-                    statusClass = styles.dilute;
-                  } else {
-                    valueDisplay =
-                      value !== null
-                        ? typeof value === "number"
-                          ? parseFloat(value).toFixed(2)
-                          : value
-                        : "Loading...";
-                    statusClass = status === "IDEAL" ? styles.ideal : styles.warning;
-                  }
+                    if (key === "water_sufficient") {
+                      valueDisplay = value ? "IDEAL" : "TOO LOW";
+                      statusClass = value ? styles.ideal : styles.warning;
+                    } else if (key === "ppm" && status === "DILUTE_WATER") {
+                      valueDisplay = value != null ? parseFloat(value).toFixed(2) : "Loading...";
+                      statusClass = styles.dilute;
+                    } else {
+                      valueDisplay =
+                        value != null
+                          ? typeof value === "number"
+                            ? parseFloat(value).toFixed(2)
+                            : value
+                          : "Loading...";
+                      statusClass = status === "IDEAL" ? styles.ideal : styles.warning;
+                    }
 
-                  return (
-                    <div key={key} className={styles.sensorCardWrapper}>
-                      <div className={styles.sensorCard}>
-                        <div className={styles.sensorName}>
-                          {sensorNames[key] || key}
+                    const idealText =
+                      idealRanges &&
+                      ((key === "temperature" &&
+                        idealRanges.temp_min != null &&
+                        idealRanges.temp_max != null &&
+                        `Ideal: ${idealRanges.temp_min}°C – ${idealRanges.temp_max}°C`) ||
+                        (key === "humidity" &&
+                          idealRanges.humidity_min != null &&
+                          idealRanges.humidity_max != null &&
+                          `Ideal: ${idealRanges.humidity_min}% – ${idealRanges.humidity_max}%`) ||
+                        (key === "ph" &&
+                          idealRanges.ph_min != null &&
+                          idealRanges.ph_max != null &&
+                          `Ideal: ${idealRanges.ph_min} – ${idealRanges.ph_max}`) ||
+                        (key === "ppm" &&
+                          idealRanges.ppm_min != null &&
+                          idealRanges.ppm_max != null &&
+                          `Ideal: ${idealRanges.ppm_min} – ${idealRanges.ppm_max}`));
+
+                    return (
+                      <div key={key} className={styles.sensorCardWrapper}>
+                        <div className={styles.sensorCard}>
+                          <div className={styles.sensorName}>
+                            {sensorNames[key] || key}
+                          </div>
+
+                          <div className={`${styles.sensorValue} ${statusClass}`}>
+                            {valueDisplay}
+                          </div>
+
+                          {idealText && (
+                            <div className={styles.idealRange}>{idealText}</div>
+                          )}
                         </div>
 
-                        <div className={`${styles.sensorValue} ${statusClass}`}>
-                          {valueDisplay}
-                        </div>
-
-                        <div className={styles.idealRange}>
-                          Ideal:{" "}
-                          {key === "temperature"
-                            ? `${idealRanges?.temp_min}°C – ${idealRanges?.temp_max}°C`
-                            : key === "humidity"
-                            ? `${idealRanges?.humidity_min}% – ${idealRanges?.humidity_max}%`
-                            : key === "ph"
-                            ? `${idealRanges?.ph_min} – ${idealRanges?.ph_max}`
-                            : key === "ppm"
-                            ? `${idealRanges?.ppm_min} – ${idealRanges?.ppm_max}`
-                            : key === "water_sufficient"
-                            ? "Sufficient"
-                            : "Range N/A"}
-                        </div>
+                        {key === "ppm" && status === "DILUTE_WATER" && (
+                          <div className={styles.ppmWarning}>
+                            <p className={styles.ppmWarningText}>
+                              PPM TOO HIGH: Manual dilution required. Please add
+                              distilled water to lower nutrient concentration.
+                            </p>
+                          </div>
+                        )}
                       </div>
-
-                      {/* PPM DILUTION WARNING */}
-                      {key === "ppm" && status === "DILUTE_WATER" && (
-                        <div className={styles.ppmWarning}>
-                          <FaExclamationTriangle className={styles.ppmWarningIcon} />
-                          <p className={styles.ppmWarningText}>
-                            PPM TOO HIGH: Manual dilution required. Please add
-                            distilled water to lower nutrient concentration.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
 
-              {/* Abort Button */}
+              {/* Abort */}
               <div className={styles.abortSection}>
-                <Button
-                  danger
-                  size="large"
-                  onClick={handleAbortPlant}
-                  style={{ fontWeight: 'bold' }}
-                >
+                <Button danger size="large" onClick={handleAbortPlant} style={{ fontWeight: "bold" }}>
                   Abort Plant
                 </Button>
               </div>
             </>
           ) : (
-            /* Empty State */
-            <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-              <FaLeaf style={{ fontSize: '64px', color: '#d1d5db', marginBottom: '24px' }} />
-              <Title level={3} style={{ color: '#9ca3af', marginBottom: '16px' }}>
+            // Empty state
+            <div style={{ textAlign: "center", padding: "60px 20px" }}>
+              <FaLeaf style={{ fontSize: "64px", color: "#d1d5db", marginBottom: "24px" }} />
+              <Title level={3} style={{ color: "#9ca3af", marginBottom: "16px" }}>
                 No Plant Selected
               </Title>
-              <Paragraph style={{ color: '#6b7280', marginBottom: '24px' }}>
+              <Paragraph style={{ color: "#6b7280", marginBottom: "24px" }}>
                 Create a plant to start monitoring your smart garden
               </Paragraph>
               <Button
                 type="primary"
                 size="large"
-                icon={<FaLeaf />}
                 onClick={() => setShowPlantModal(true)}
-                style={{ 
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  border: 'none',
-                  fontWeight: 'bold'
+                style={{
+                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                  border: "none",
+                  fontWeight: "bold",
                 }}
               >
                 Create Plant
@@ -616,52 +452,33 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Utility Bar - Only show when plant is selected */}
+        {/* Utility Bar (when selected) */}
         {selectedPlant && selectedStage && (
           <div className={styles.utilityBar}>
-            {/* View Growth Button Card */}
             <div className={styles.utilityCardLeft}>
               <div className={styles.utilityCard}>
                 <Button
                   type="primary"
-                  icon={<FaChartLine />}
-                  onClick={fetchHistoricalData}
-                  loading={graphLoading}
-                  style={{ 
-                    backgroundColor: '#10b981',
-                    borderColor: '#10b981',
-                    fontWeight: 'bold'
-                  }}
+                  onClick={openHistoricalGraph}
+                  style={{ backgroundColor: "#10b981", borderColor: "#10b981", fontWeight: "bold" }}
                 >
-                  {graphLoading ? "Loading Growth..." : "View Growth (7 Days)"}
+                  View Historical Growth
                 </Button>
               </div>
             </div>
 
-            {/* Stage Update Card */}
             <div className={styles.utilityCardRight}>
               <div className={styles.stageUpdateCard}>
-                <p className={styles.stageUpdateLabel}>
-                  Update Growth Stage:
-                </p>
+                <p className={styles.stageUpdateLabel}>Update Growth Stage:</p>
                 <div className={styles.stageUpdateControls}>
-                  <Select
-                    value={newStage}
-                    onChange={(value) => setNewStage(value)}
-                    style={{ flex: 1 }}
-                  >
+                  <Select value={newStage} onChange={(v) => setNewStage(v)} style={{ flex: 1 }}>
                     {GROWTH_STAGES.map((stage) => (
                       <Option key={stage} value={stage}>
                         {stage.charAt(0).toUpperCase() + stage.slice(1)} Stage
                       </Option>
                     ))}
                   </Select>
-                  <Button
-                    type="primary"
-                    icon={<FaSync />}
-                    onClick={handleStageUpdate}
-                    style={{ fontWeight: 'bold' }}
-                  >
+                  <Button type="primary" onClick={handleStageUpdate} style={{ fontWeight: "bold" }}>
                     Update
                   </Button>
                 </div>
@@ -670,12 +487,381 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Graph Modal */}
-        {showGraphModal && <GrowthModal />}
-        
-        {/* Plant Creation Modal */}
-        <PlantCreationModal />
+        {/* Past Grows Section */}
+        <div style={{ marginTop: 24 }}>
+          <Title level={4} style={{ margin: "0 0 12px" }}>
+            Past Grows
+          </Title>
+          <Paragraph style={{ color: "#6b7280", marginBottom: 16 }}>
+            Review archived plants, summary stats, and saved chart snapshots.
+          </Paragraph>
+          <PastGrowsGrid />
+        </div>
       </main>
+
+      {/* === Persistent Graph Overlay (no unmounts) === */}
+      <div
+        id="graph-overlay"
+        aria-hidden={showGraphModal ? "false" : "true"}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setShowGraphModal(false); // click backdrop closes
+        }}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          display: showGraphModal ? 'flex' : 'none',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(0,0,0,0.45)',
+          zIndex: 9999,
+          padding: '24px',
+        }}
+      >
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            width: 'min(1200px, 92vw)',
+            maxHeight: '88vh',
+            background: '#fff',
+            borderRadius: 12,
+            boxShadow: '0 10px 40px rgba(0,0,0,0.25)',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div style={{
+            padding: '12px 16px',
+            borderBottom: '1px solid #e5e7eb',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <span style={{ fontWeight: 600 }}>Historical Growth</span>
+            <Button onClick={() => setShowGraphModal(false)}>Close</Button>
+          </div>
+
+          {/* Content: charts remain mounted forever */}
+          <div style={{ padding: 12, overflow: 'auto', flex: 1 }}>
+            <HistoricalCharts ref={chartsRef} show={showGraphModal} />
+          </div>
+        </div>
+      </div>
+      
+      {/* Plant Creation Modal */}
+      <Modal
+        open={showPlantModal}
+        onCancel={() => {
+          setShowPlantModal(false);
+          setIsCustomPlant(false);
+          form.resetFields();
+        }}
+        footer={null}
+        width={700}
+        centered
+        closable
+        maskClosable
+        destroyOnClose={false}
+      >
+        <div style={{ textAlign: "center", padding: "20px 0" }}>
+          <Title level={2} style={{ marginBottom: "8px" }}>
+            🌱 Create Your Plant
+          </Title>
+
+          <Paragraph style={{ fontSize: "16px", color: "#6b7280", marginBottom: "32px" }}>
+            Choose a plant preset or create a custom configuration.
+          </Paragraph>
+
+          <Form
+            form={form}
+            layout="vertical"
+            style={{ maxWidth: "600px", margin: "0 auto", textAlign: "left" }}
+            initialValues={{
+              dropdownStage: "seedling",
+              seedling:   { temp_min: 20, temp_max: 26, humidity_min: 50, humidity_max: 70, ph_min: 5.5, ph_max: 6.5, ppm_min: 400, ppm_max: 800, light_pwm_cycle: 12 },
+              vegetative: { temp_min: 21, temp_max: 27, humidity_min: 45, humidity_max: 65, ph_min: 5.8, ph_max: 6.6, ppm_min: 700, ppm_max: 1000, light_pwm_cycle: 14 },
+              mature:     { temp_min: 22, temp_max: 28, humidity_min: 40, humidity_max: 60, ph_min: 6.0, ph_max: 6.8, ppm_min: 900, ppm_max: 1200, light_pwm_cycle: 12 },
+            }}
+          >
+            <Form.Item
+              name="customPlantName"
+              label={<Text strong>Plant Name</Text>}
+              rules={[{ required: true, message: "Please enter a name for your plant" }]}
+            >
+              <Input size="large" placeholder="e.g., My Pothos Plant" />
+            </Form.Item>
+
+            <Form.Item label={<Text strong>Configuration Type</Text>} required>
+              <Select
+                size="large"
+                placeholder="Choose preset or custom"
+                value={isCustomPlant ? "custom" : selectedPreset?.plant_name}
+                onChange={(value) => {
+                  if (value === "custom") {
+                    setIsCustomPlant(true);
+                    setSelectedPreset(null);
+                  } else {
+                    setIsCustomPlant(false);
+                    const preset = availablePresets.find((p) => p.plant_name === value);
+                    setSelectedPreset(preset);
+                  }
+                }}
+                style={{ width: "100%" }}
+              >
+                {availablePresets.map((preset) => (
+                  <Option key={preset._id || preset.plant_name} value={preset.plant_name}>
+                    {preset.plant_name.charAt(0).toUpperCase() + preset.plant_name.slice(1)}
+                  </Option>
+                ))}
+                <Option value="custom">Custom Configuration</Option>
+              </Select>
+            </Form.Item>
+
+            {/* ---- three-stage custom UI (no backend changes) ---- */}
+            {isCustomPlant && (
+              <>
+                <Alert
+                  message="Custom Plant Configuration"
+                  description="Define ideal environmental ranges for each stage. Switch stages any time during growth."
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: "16px" }}
+                />
+
+                {/* Seedling */}
+                <Title level={5} style={{ marginTop: 8 }}>Seedling</Title>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Temp Min (°C)" name={['seedling', 'temp_min']} rules={[{ required: true, message: 'Required' }]} >
+                      <InputNumber style={{ width: "100%" }} min={10} max={40} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Temp Max (°C)" name={['seedling', 'temp_max']} rules={[{ required: true, message: 'Required' }]} >
+                      <InputNumber style={{ width: "100%" }} min={10} max={40} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Humidity Min (%)" name={['seedling', 'humidity_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={100} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Humidity Max (%)" name={['seedling', 'humidity_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={100} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="pH Min" name={['seedling', 'ph_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="pH Max" name={['seedling', 'ph_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="PPM Min" name={['seedling', 'ppm_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={5000} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="PPM Max" name={['seedling', 'ppm_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={5000} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Form.Item label="Light PWM Cycle (hrs/day)" name={['seedling', 'light_pwm_cycle']} rules={[{ required: true, message: 'Required' }]}>
+                  <InputNumber style={{ width: "100%" }} min={0} max={24} />
+                </Form.Item>
+
+                <Divider />
+
+                {/* Vegetative */}
+                <Title level={5}>Vegetative</Title>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Temp Min (°C)" name={['vegetative', 'temp_min']} rules={[{ required: true, message: 'Required' }]} >
+                      <InputNumber style={{ width: "100%" }} min={10} max={40} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Temp Max (°C)" name={['vegetative', 'temp_max']} rules={[{ required: true, message: 'Required' }]} >
+                      <InputNumber style={{ width: "100%" }} min={10} max={40} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Humidity Min (%)" name={['vegetative', 'humidity_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={100} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Humidity Max (%)" name={['vegetative', 'humidity_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={100} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="pH Min" name={['vegetative', 'ph_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="pH Max" name={['vegetative', 'ph_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="PPM Min" name={['vegetative', 'ppm_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={5000} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="PPM Max" name={['vegetative', 'ppm_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={5000} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Form.Item label="Light PWM Cycle (hrs/day)" name={['vegetative', 'light_pwm_cycle']} rules={[{ required: true, message: 'Required' }]}>
+                  <InputNumber style={{ width: "100%" }} min={0} max={24} />
+                </Form.Item>
+
+                <Divider />
+
+                {/* Mature */}
+                <Title level={5}>Mature</Title>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Temp Min (°C)" name={['mature', 'temp_min']} rules={[{ required: true, message: 'Required' }]} >
+                      <InputNumber style={{ width: "100%" }} min={10} max={40} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Temp Max (°C)" name={['mature', 'temp_max']} rules={[{ required: true, message: 'Required' }]} >
+                      <InputNumber style={{ width: "100%" }} min={10} max={40} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="Humidity Min (%)" name={['mature', 'humidity_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={100} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="Humidity Max (%)" name={['mature', 'humidity_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={100} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="pH Min" name={['mature', 'ph_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="pH Max" name={['mature', 'ph_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={14} step={0.1} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label="PPM Min" name={['mature', 'ppm_min']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={5000} />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label="PPM Max" name={['mature', 'ppm_max']} rules={[{ required: true, message: 'Required' }]}>
+                      <InputNumber style={{ width: "100%" }} min={0} max={5000} />
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Form.Item label="Light PWM Cycle (hrs/day)" name={['mature', 'light_pwm_cycle']} rules={[{ required: true, message: 'Required' }]}>
+                  <InputNumber style={{ width: "100%" }} min={0} max={24} />
+                </Form.Item>
+              </>
+            )}
+
+            <Form.Item
+              label={
+                <Text strong style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  Growth Stage
+                  <Tooltip
+                    title="Our kit groups plant growth into 3 broad stages. Click to learn more."
+                    placement="right"
+                  >
+                    <a
+                      href="https://www.saferbrand.com/articles/plant-growth-stages"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "#10b981" }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <FaInfoCircle />
+                    </a>
+                  </Tooltip>
+                </Text>
+              }
+              name="dropdownStage"
+            >
+              <Select size="large" value={dropdownStage} onChange={(value) => setDropdownStage(value)} style={{ width: "100%" }}>
+                {GROWTH_STAGES.map((stage) => (
+                  <Option key={stage} value={stage}>
+                    {stage.charAt(0).toUpperCase() + stage.slice(1)} Stage
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+
+            {!isCustomPlant && (
+              <>
+                <Divider style={{ margin: "16px 0" }} />
+                <Alert
+                  message="Setup Instructions"
+                  description="Fill the tank to the marked range with distilled water before starting. Add water as needed."
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: "16px" }}
+                />
+              </>
+            )}
+
+            <Button
+              type="primary"
+              size="large"
+              onClick={handleCreatePlant}
+              block
+              style={{
+                height: "48px",
+                fontSize: "16px",
+                fontWeight: "bold",
+                background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                border: "none",
+                marginTop: "16px",
+              }}
+            >
+              Create & Start Monitoring
+            </Button>
+          </Form>
+        </div>
+      </Modal>
     </div>
   );
 }

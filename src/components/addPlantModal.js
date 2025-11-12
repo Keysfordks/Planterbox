@@ -1,80 +1,79 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Modal, Form, Input, InputNumber, Select, Button, message, Space } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 
 const { Option } = Select;
 
-export default function AddPlantModal({ visible, onClose, onSuccess }) {
+function AddPlantModalInner({ visible, onClose, onSuccess, deviceId }) {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
 
   const stages = ['seedling', 'vegetative', 'flowering', 'mature', 'harvest'];
 
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     try {
       const values = await form.validateFields();
       setLoading(true);
 
-      // Construct the plant profile object
+      // Construct payload without creating new object identities on every keystroke
       const plantProfile = {
         plant_name: values.plant_name.toLowerCase().trim(),
         stage: values.stage,
         ideal_conditions: {
-          ph_min: parseFloat(values.ph_min),
-          ph_max: parseFloat(values.ph_max),
-          ppm_min: parseInt(values.ppm_min),
-          ppm_max: parseInt(values.ppm_max),
-          temp_min: parseFloat(values.temp_min),
-          temp_max: parseFloat(values.temp_max),
-          humidity_min: parseInt(values.humidity_min),
-          humidity_max: parseInt(values.humidity_max),
-          light_pwm_cycle: parseInt(values.light_pwm_cycle),
-          ideal_light_distance_cm: parseInt(values.ideal_light_distance_cm),
-          light_distance_tolerance_cm: parseInt(values.light_distance_tolerance_cm)
-        }
+          ph_min: Number(values.ph_min),
+          ph_max: Number(values.ph_max),
+          ppm_min: Number(values.ppm_min),
+          ppm_max: Number(values.ppm_max),
+          temp_min: Number(values.temp_min),
+          temp_max: Number(values.temp_max),
+          humidity_min: Number(values.humidity_min),
+          humidity_max: Number(values.humidity_max),
+          light_pwm_cycle: Number(values.light_pwm_cycle),
+          ideal_light_distance_cm: Number(values.ideal_light_distance_cm),
+          light_distance_tolerance_cm: Number(values.light_distance_tolerance_cm),
+        },
+        ...(deviceId ? { deviceId } : {}),
       };
 
-      // Send to API
-      const response = await fetch('/api/plants', {
+      const res = await fetch('/api/plants', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(plantProfile),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to add plant');
-      }
+      if (!res.ok) throw new Error('Failed to add plant');
 
       message.success('Plant profile added successfully!');
+      // Keep the modal mounted; just reset the form after success
       form.resetFields();
-      onSuccess();
-      onClose();
-    } catch (error) {
-      console.error('Error adding plant:', error);
+      onSuccess?.();
+      onClose?.();
+    } catch (err) {
+      console.error('Error adding plant:', err);
       message.error('Failed to add plant profile');
     } finally {
       setLoading(false);
     }
-  };
+  }, [form, onClose, onSuccess, deviceId]);
 
-  const handleCancel = () => {
+  const handleCancel = useCallback(() => {
+    // Do NOT destroy the content; just close the modal and preserve state if you want
     form.resetFields();
-    onClose();
-  };
+    onClose?.();
+  }, [form, onClose]);
 
   return (
     <Modal
       title="Add New Plant Profile"
       open={visible}
       onCancel={handleCancel}
+      destroyOnClose={false}   // keep content mounted to avoid flicker
+      forceRender              // mount once so the first open is instant
+      maskClosable={false}
       footer={[
-        <Button key="cancel" onClick={handleCancel}>
-          Cancel
-        </Button>,
+        <Button key="cancel" onClick={handleCancel}>Cancel</Button>,
         <Button
           key="submit"
           type="primary"
@@ -93,7 +92,7 @@ export default function AddPlantModal({ visible, onClose, onSuccess }) {
         initialValues={{
           light_pwm_cycle: 12,
           ideal_light_distance_cm: 15,
-          light_distance_tolerance_cm: 2
+          light_distance_tolerance_cm: 2,
         }}
       >
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
@@ -105,7 +104,7 @@ export default function AddPlantModal({ visible, onClose, onSuccess }) {
               label="Plant Name"
               rules={[{ required: true, message: 'Please enter plant name' }]}
             >
-              <Input placeholder="e.g., Pothos, Basil, Tomato" />
+              <Input placeholder="e.g. Pothos, Basil, Tomato" />
             </Form.Item>
 
             <Form.Item
@@ -114,7 +113,7 @@ export default function AddPlantModal({ visible, onClose, onSuccess }) {
               rules={[{ required: true, message: 'Please select growth stage' }]}
             >
               <Select placeholder="Select growth stage">
-                {stages.map(stage => (
+                {stages.map((stage) => (
                   <Option key={stage} value={stage}>
                     {stage.charAt(0).toUpperCase() + stage.slice(1)}
                   </Option>
@@ -132,27 +131,14 @@ export default function AddPlantModal({ visible, onClose, onSuccess }) {
                 label="Minimum pH"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <InputNumber
-                  min={0}
-                  max={14}
-                  step={0.1}
-                  placeholder="5.5"
-                  style={{ width: '100%' }}
-                />
+                <InputNumber min={0} max={14} step={0.1} placeholder="5.5" style={{ width: '100%' }} />
               </Form.Item>
-
               <Form.Item
                 name="ph_max"
                 label="Maximum pH"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <InputNumber
-                  min={0}
-                  max={14}
-                  step={0.1}
-                  placeholder="6.5"
-                  style={{ width: '100%' }}
-                />
+                <InputNumber min={0} max={14} step={0.1} placeholder="6.5" style={{ width: '100%' }} />
               </Form.Item>
             </Space>
           </div>
@@ -166,27 +152,14 @@ export default function AddPlantModal({ visible, onClose, onSuccess }) {
                 label="Minimum PPM"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <InputNumber
-                  min={0}
-                  max={5000}
-                  step={50}
-                  placeholder="200"
-                  style={{ width: '100%' }}
-                />
+                <InputNumber min={0} max={5000} step={50} placeholder="200" style={{ width: '100%' }} />
               </Form.Item>
-
               <Form.Item
                 name="ppm_max"
                 label="Maximum PPM"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <InputNumber
-                  min={0}
-                  max={5000}
-                  step={50}
-                  placeholder="400"
-                  style={{ width: '100%' }}
-                />
+                <InputNumber min={0} max={5000} step={50} placeholder="400" style={{ width: '100%' }} />
               </Form.Item>
             </Space>
           </div>
@@ -200,27 +173,14 @@ export default function AddPlantModal({ visible, onClose, onSuccess }) {
                 label="Minimum Temperature"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <InputNumber
-                  min={0}
-                  max={50}
-                  step={0.5}
-                  placeholder="20"
-                  style={{ width: '100%' }}
-                />
+                <InputNumber min={0} max={50} step={0.5} placeholder="20" style={{ width: '100%' }} />
               </Form.Item>
-
               <Form.Item
                 name="temp_max"
                 label="Maximum Temperature"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <InputNumber
-                  min={0}
-                  max={50}
-                  step={0.5}
-                  placeholder="28"
-                  style={{ width: '100%' }}
-                />
+                <InputNumber min={0} max={50} step={0.5} placeholder="28" style={{ width: '100%' }} />
               </Form.Item>
             </Space>
           </div>
@@ -234,27 +194,14 @@ export default function AddPlantModal({ visible, onClose, onSuccess }) {
                 label="Minimum Humidity"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <InputNumber
-                  min={0}
-                  max={100}
-                  step={5}
-                  placeholder="60"
-                  style={{ width: '100%' }}
-                />
+                <InputNumber min={0} max={100} step={5} placeholder="60" style={{ width: '100%' }} />
               </Form.Item>
-
               <Form.Item
                 name="humidity_max"
                 label="Maximum Humidity"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <InputNumber
-                  min={0}
-                  max={100}
-                  step={5}
-                  placeholder="80"
-                  style={{ width: '100%' }}
-                />
+                <InputNumber min={0} max={100} step={5} placeholder="80" style={{ width: '100%' }} />
               </Form.Item>
             </Space>
           </div>
@@ -267,13 +214,7 @@ export default function AddPlantModal({ visible, onClose, onSuccess }) {
               label="Light Cycle (hours per day)"
               rules={[{ required: true, message: 'Required' }]}
             >
-              <InputNumber
-                min={0}
-                max={24}
-                step={1}
-                placeholder="12"
-                style={{ width: '100%' }}
-              />
+              <InputNumber min={0} max={24} step={1} placeholder="12" style={{ width: '100%' }} />
             </Form.Item>
 
             <Space style={{ width: '100%' }}>
@@ -282,13 +223,7 @@ export default function AddPlantModal({ visible, onClose, onSuccess }) {
                 label="Ideal Light Distance (cm)"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <InputNumber
-                  min={0}
-                  max={200}
-                  step={1}
-                  placeholder="15"
-                  style={{ width: '100%' }}
-                />
+                <InputNumber min={0} max={200} step={1} placeholder="15" style={{ width: '100%' }} />
               </Form.Item>
 
               <Form.Item
@@ -296,13 +231,7 @@ export default function AddPlantModal({ visible, onClose, onSuccess }) {
                 label="Distance Tolerance (±cm)"
                 rules={[{ required: true, message: 'Required' }]}
               >
-                <InputNumber
-                  min={0}
-                  max={50}
-                  step={1}
-                  placeholder="2"
-                  style={{ width: '100%' }}
-                />
+                <InputNumber min={0} max={50} step={1} placeholder="2" style={{ width: '100%' }} />
               </Form.Item>
             </Space>
           </div>
@@ -311,3 +240,7 @@ export default function AddPlantModal({ visible, onClose, onSuccess }) {
     </Modal>
   );
 }
+
+// Prevent parent re-renders from remounting the modal
+const AddPlantModal = React.memo(AddPlantModalInner);
+export default AddPlantModal;
