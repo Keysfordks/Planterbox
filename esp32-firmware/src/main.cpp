@@ -222,7 +222,7 @@ void readPhSensor() {
   // --- Jonathan’s 5–9 pH local calibration ---
   const float m = -9.76f;   // slope  (pH per V)
   const float b = 19.45f;   // intercept
-  float ph = m * v + b;
+  ph = m * v + b;
 
   // Clamp to a reasonable plant range
   ph = constrain(ph, 4.5f, 9.5f);
