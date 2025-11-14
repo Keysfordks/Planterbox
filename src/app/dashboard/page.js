@@ -30,7 +30,6 @@ const sensorNames = {
 const GROWTH_STAGES = ["seedling", "vegetative", "mature"];
 
 export default function DashboardPage() {
-  const { data: session, status } = useSession();
   const router = useRouter();
 
   const [selectedPlant, setSelectedPlant] = useState(null);
@@ -67,12 +66,9 @@ export default function DashboardPage() {
     }
   };
 
-  useEffect(() => {
-    if (status === "unauthenticated") router.push("/signin");
-    if (status === "authenticated") fetchPlantPresets();
-  }, [status, router]);
 
   useEffect(() => {
+    fetchPlantPresets();
     const savedPlant = localStorage.getItem("selectedPlant");
     const savedStage = localStorage.getItem("selectedStage");
     if (savedPlant) setSelectedPlant(savedPlant);
@@ -283,7 +279,6 @@ export default function DashboardPage() {
     );
   }
 
-  if (!session) return null;
 
   const headerText =
     selectedPlant && selectedStage
@@ -297,32 +292,9 @@ export default function DashboardPage() {
 
   return (
     <div className={styles.container}>
-      <Navbar session={session} />
+      <Navbar />
 
       <main className={styles.main}>
-        <Card className={styles.welcomeCard}>
-          <div className={styles.welcomeContent}>
-            <Avatar src={session.user?.image} size={64} className={styles.avatar} />
-            <div>
-              <h2 className={styles.welcomeTitle}>Welcome back, {session.user?.name || "User"}!</h2>
-              <p className={styles.welcomeEmail}>{session.user?.email}</p>
-            </div>
-          </div>
-        </Card>
-
-        <Card title="Account Information" className={styles.accountCard}>
-          <div className={styles.infoGrid}>
-            <div className={styles.infoItem}>
-              <p className={styles.infoLabel}>Name</p>
-              <p className={styles.infoValue}>{session.user?.name || "Not provided"}</p>
-            </div>
-            <div className={styles.infoItem}>
-              <p className={styles.infoLabel}>Email</p>
-              <p className={styles.infoValue}>{session.user?.email || "Not provided"}</p>
-            </div>
-          </div>
-        </Card>
-
         {/* Main Dashboard Card */}
         <div className={styles.dashboardCard}>
           <div className={styles.dashboardHeader}>

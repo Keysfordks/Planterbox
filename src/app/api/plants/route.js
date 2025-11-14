@@ -1,22 +1,18 @@
 // app/api/plants/route.js
 import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
-
-// Adjust these paths if your structure differs
 import clientPromise from '../../../lib/mongodb';
-import { auth } from '../auth/[...nextauth]/route';
 
-
+const DEFAULT_USER_ID = "local_user";
 
 /**
  * GET /api/plants
- * - ?presets=true&plant=<name>&stage=<stage> -> preset ideal_conditions (no userId)
+ * - ?presets=true&plant=<n>&stage=<stage> -> preset ideal_conditions (no userId)
  * - ?presets=true -> list one "seedling" preset per plant (no userId)
- * - (default, requires auth) -> authenticated user's plants
+ * - (default) -> local user's plants
  */
 export async function GET(request) {
   try {
-    const session = await auth();
     const { searchParams } = new URL(request.url);
 
     const presetsOnly = searchParams.get('presets') === 'true';
@@ -55,13 +51,9 @@ export async function GET(request) {
       return NextResponse.json({ presets }, { status: 200 });
     }
 
-    if (!session || !session.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const plants = await db
       .collection('plant_profiles')
-      .find({ userId: session.user.id })
+      .find({ userId: DEFAULT_USER_ID })
       .toArray();
 
     return NextResponse.json({ plants }, { status: 200 });
@@ -88,18 +80,9 @@ export async function GET(request) {
  *   // optional
  *   deviceId?: string
  * }
- *
- * - Inserts the plant profile (scoped to the user)
- * - Updates app_state to set current selection for the user
- * - If deviceId provided, mirrors the selection under that deviceId
  */
 export async function POST(request) {
   try {
-    const session = await auth();
-    if (!session || !session.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const body = await request.json();
     if (!body.plant_name || !body.stage || !body.ideal_conditions) {
       return NextResponse.json(
@@ -116,7 +99,7 @@ export async function POST(request) {
     const plantData = {
       ...body,
       plant_name: normalizedName,
-      userId: session.user.id,
+      userId: DEFAULT_USER_ID,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -132,7 +115,7 @@ export async function POST(request) {
 
     // selection for the user
     await appState.updateOne(
-      { state_name: 'plantSelection', userId: session.user.id },
+      { state_name: 'plantSelection', userId: DEFAULT_USER_ID },
       { $set: { value: selectionValue } },
       { upsert: true }
     );
@@ -170,11 +153,6 @@ export async function POST(request) {
  */
 export async function DELETE(request) {
   try {
-    const session = await auth();
-    if (!session || !session.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const { searchParams } = new URL(request.url);
     const plantId = searchParams.get('id');
     if (!plantId) {
@@ -186,7 +164,7 @@ export async function DELETE(request) {
 
     const result = await db.collection('plant_profiles').deleteOne({
       _id: new ObjectId(plantId),
-      userId: session.user.id,
+      userId: DEFAULT_USER_ID,
     });
 
     if (result.deletedCount === 0) {

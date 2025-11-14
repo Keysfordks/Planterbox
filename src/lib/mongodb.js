@@ -1,13 +1,13 @@
 import { MongoClient } from 'mongodb';
 
-if (!process.env.MONGODB_URI) {
-  throw new Error('Please add your MongoDB URI to .env.local');
-}
+// Hardcoded MongoDB URI for local connection
+const uri = "mongodb://localhost:27017";
 
-const uri = process.env.MONGODB_URI;
 const options = {
   maxPoolSize: 10,
   minPoolSize: 2,
+  serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s for local connections
+  socketTimeoutMS: 45000,
 };
 
 let client;

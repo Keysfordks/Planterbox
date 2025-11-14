@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import clientPromise from "../../../lib/mongodb";
-import { auth } from "../auth/[...nextauth]/route";
 import { ObjectId } from "mongodb";
+
+const DEFAULT_USER_ID = "local_user";
 
 /**
  * GET /api/archives
@@ -10,11 +11,6 @@ import { ObjectId } from "mongodb";
  */
 export async function GET(request) {
   try {
-    const session = await auth().catch(() => null);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id") || null;
 
@@ -26,7 +22,7 @@ export async function GET(request) {
       // single archive
       const archive = await col.findOne({
         _id: new ObjectId(id),
-        userId: session.user.id,
+        userId: DEFAULT_USER_ID,
       });
       if (!archive) {
         return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -36,7 +32,7 @@ export async function GET(request) {
 
     // list archives (most recent first). Project a minimal shape for cards.
     const archives = await col
-      .find({ userId: session.user.id })
+      .find({ userId: DEFAULT_USER_ID })
       .project({
         plantName: 1,
         finalStage: 1,
@@ -67,11 +63,6 @@ export async function GET(request) {
  */
 export async function DELETE(request) {
   try {
-    const session = await auth().catch(() => null);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     const all = searchParams.get("all") === "true";
@@ -81,7 +72,7 @@ export async function DELETE(request) {
     const col = db.collection("archives");
 
     if (all) {
-      const result = await col.deleteMany({ userId: session.user.id });
+      const result = await col.deleteMany({ userId: DEFAULT_USER_ID });
       return NextResponse.json({ ok: true, deletedCount: result.deletedCount }, { status: 200 });
     }
 
@@ -96,7 +87,7 @@ export async function DELETE(request) {
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }
 
-    const result = await col.deleteOne({ _id, userId: session.user.id });
+    const result = await col.deleteOne({ _id, userId: DEFAULT_USER_ID });
 
     if (result.deletedCount === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
