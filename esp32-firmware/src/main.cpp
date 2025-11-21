@@ -19,7 +19,7 @@ const char* API_PATH = "/api/sensordata";
 // -------- Sensors / Pins --------
 #define DHTPIN   33
 #define DHTTYPE  DHT11
-#define TRIG_PIN 26
+#define TRIG_PIN 23
 #define ECHO_PIN 34
 #define PPM_SENSOR_PIN 39
 #define PH_SENSOR_PIN  36
@@ -31,6 +31,7 @@ const char* API_PATH = "/api/sensordata";
 #define PPM_A_PUMP_PIN   18
 #define PPM_B_PUMP_PIN   5
 const int WATER_THRESHOLD = 680;
+
 
 // -------- Stepper Motor (ULN2003 + 28BYJ-48) --------
 #define MOTOR_IN1 27
@@ -89,8 +90,8 @@ static long lastEchoDurationUs = 0;
 
 const float TARGET_MIN_CM = 25.0f;
 const float TARGET_MAX_CM = 30.0f;
-const int LIGHT_ADJUST_STEPS = 5;
-const int MOTOR_STEP_DELAY_US = 5000;
+const int LIGHT_ADJUST_STEPS = 4096;
+const int MOTOR_STEP_DELAY_US = 800;
 const unsigned long LIGHT_ADJUST_INTERVAL_MS = 1000;
 unsigned long lastLightAdjustTime = 0;
 
@@ -215,18 +216,15 @@ void readPhSensor() {
   float v = avg * 3.3f / 4095.0f;   // ESP32 ADC -> volts
 
     // If no signal, set pH = 0
-  float ph;
-  if (v <= 0.01f) {   // ~10 mV tolerance to catch open/faulty readings
-    ph = 0.0f;
-  } else {
+
   // --- Jonathan’s 5–9 pH local calibration ---
   const float m = -9.76f;   // slope  (pH per V)
   const float b = 19.45f;   // intercept
-  ph = m * v + b;
+  float ph = m * v + b;
 
   // Clamp to a reasonable plant range
   ph = constrain(ph, 4.5f, 9.5f);
-  }
+
   sensorData["ph"] = ph;
 
   lastPhSum   = sum;
@@ -299,6 +297,7 @@ void setup() {
   Serial.printf("\n[WiFi] CONNECTED | IP: %s\n", WiFi.localIP().toString().c_str());
 
   dht.begin();
+  
   pinMode(TRIG_PIN, OUTPUT); pinMode(ECHO_PIN, INPUT);
   pinMode(PPM_SENSOR_PIN, INPUT); pinMode(PH_SENSOR_PIN, INPUT);
   pinMode(WATER_SENSOR_PIN, INPUT);
