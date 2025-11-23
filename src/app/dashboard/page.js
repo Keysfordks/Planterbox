@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import {
-  Card, Avatar, Spin, message, Select, Button, Alert, Tooltip, Modal,
+  Card, message, Select, Button, Alert, Tooltip, Modal,
   Typography, Divider, Input, Form, InputNumber, Row, Col
 } from "antd";
 import Navbar from "../../components/navbar";
@@ -66,9 +65,11 @@ export default function DashboardPage() {
     }
   };
 
-
   useEffect(() => {
     fetchPlantPresets();
+  }, [router]);
+
+  useEffect(() => {
     const savedPlant = localStorage.getItem("selectedPlant");
     const savedStage = localStorage.getItem("selectedStage");
     if (savedPlant) setSelectedPlant(savedPlant);
@@ -270,15 +271,6 @@ export default function DashboardPage() {
       message.error("Please fill in all required fields");
     }
   };
-
-  if (status === "loading") {
-    return (
-      <div className={styles.loadingContainer}>
-        <Spin size="large" />
-      </div>
-    );
-  }
-
 
   const headerText =
     selectedPlant && selectedStage
@@ -536,7 +528,6 @@ export default function DashboardPage() {
         centered
         closable
         maskClosable
-        destroyOnClose={false}
       >
         <div style={{ textAlign: "center", padding: "20px 0" }}>
           <Title level={2} style={{ marginBottom: "8px" }}>

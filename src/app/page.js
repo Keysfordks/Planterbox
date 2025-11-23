@@ -6,7 +6,7 @@ import Navbar from '../components/navbar';
 import styles from '../styles/home.module.css';
 
 export default async function HomePage() {
-  const session = await auth();
+
   const features = [
     {
       icon: <CheckCircleOutlined />,
@@ -27,7 +27,7 @@ export default async function HomePage() {
 
   return (
     <div className={styles.container}>
-      <Navbar session={session} />
+      <Navbar />
       <main className={styles.main}>
         <div className={styles.hero}>
           <h1 className={styles.heroTitle}>
@@ -38,19 +38,11 @@ export default async function HomePage() {
           </p>
           
           <div className={styles.ctaContainer}>
-            {!session ? (
-              <Link href="/signin">
-                <Button type="primary" size="large" icon={<ArrowRightOutlined />} className={styles.ctaButton}>
-                  Get Started
-                </Button>
-              </Link>
-            ) : (
               <Link href="/dashboard">
                 <Button type="primary" size="large" icon={<ArrowRightOutlined />} className={styles.ctaButton}>
                   Go to Dashboard
                 </Button>
               </Link>
-            )}
           </div>
         </div>
       </main>

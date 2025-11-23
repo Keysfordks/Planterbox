@@ -150,7 +150,6 @@ function ArchiveCardHorizontal({ item, onOpen, onDelete }) {
       hoverable
       onClick={onOpen}
       style={{ borderRadius: 14, background: 'white' }}
-      bodyStyle={{ padding: 14 }}
     >
       <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }}>
         {/* LEFT: thumbnail */}
