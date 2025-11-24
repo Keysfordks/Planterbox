@@ -1,8 +1,6 @@
 import Link from 'next/link';
 import { Button, Card } from 'antd';
-import { CheckCircleOutlined, SafetyOutlined, ThunderboltOutlined, ArrowRightOutlined } from '@ant-design/icons';
-import { auth } from './api/auth/[...nextauth]/route';
-import Navbar from '../components/navbar';
+import { CheckCircleOutlined, SafetyOutlined, ThunderboltOutlined, ArrowRightOutlined } from '@ant-design/icons';import Navbar from '../components/navbar';
 import styles from '../styles/home.module.css';
 
 export default async function HomePage() {

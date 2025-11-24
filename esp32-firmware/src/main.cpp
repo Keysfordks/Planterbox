@@ -203,25 +203,28 @@ void logHeaderCycle()
 // ===================================================
 // Sensor reading
 // ===================================================
-void readDHT()
-{
-  float h = dht.readHumidity();
-  float t = dht.readTemperature();
-  if (isnan(h))
-  {
-    h = 0;
-  }
-  if (isnan(t))
-  {
-    t = 0;
-  }
-  sensorData["temperature"] = t;
-  sensorData["humidity"] = h;
-  currentTempC = t;
+float simTemp = 24.0f;     // starting values
+float simHum  = 45.0f;
 
-#if VERBOSE_LOG
-  Serial.printf("[DHT11] Temp: %.2f C | Humidity: %.2f %%\n", t, h);
-#endif
+void readDHT() {
+  // Small random drift
+  simTemp += random(-5, 6) * 0.01f;   // -0.05°C to +0.05°C per loop
+  simHum  += random(-8, 9) * 0.02f;   // small humidity drift
+
+  // Clamp to realistic AC indoor values
+  simTemp = constrain(simTemp, 23.0f, 25.0f);
+  simHum  = constrain(simHum, 40.0f, 55.0f);
+
+  // Assign into JSON document
+  sensorData["temperature"] = simTemp;
+  sensorData["humidity"]    = simHum;
+
+  // Store temp for PPM compensation
+  currentTempC = simTemp;
+
+  #if VERBOSE_LOG
+  Serial.printf("[DHT11 SIM] Temp: %.2f C | Humidity: %.2f %%\n", simTemp, simHum);
+  #endif
 }
 
 void readUltrasonic()
@@ -245,18 +248,13 @@ void readUltrasonic()
 #endif
 }
 
-void readPpmSensor()
-{
+void readPpmSensor() {
   long sum = 0;
-  for (int i = 0; i < 10; i++)
-  {
-    sum += analogRead(PPM_SENSOR_PIN);
-    delay(10);
-  }
-  float avg = (sum / 10.0f);
+  for (int i=0;i<10;i++){ sum += analogRead(PPM_SENSOR_PIN); delay(10); }
+  float avg = (sum/10.0f);
   float v = avg * 3.3f / 4096.0f;
   float ppm = 420.0f * v;
-  float comp = 1.0f + 0.02f * (currentTempC - 25.0f);
+  float comp = 1.0f + 0.02f*(currentTempC-25.0f);
   ppm /= comp;
 
   sensorData["ppm"] = ppm;
@@ -265,10 +263,10 @@ void readPpmSensor()
   lastPpmVolt = v;
   lastPpmVal = ppm;
 
-#if VERBOSE_LOG
+  #if VERBOSE_LOG
   Serial.printf("[PPM] avgADC: %.1f | Volt: %.3f V | Temp: %.2f C | CompPPM: %.2f\n",
                 avg, v, currentTempC, ppm);
-#endif
+  #endif
 }
 
 void readPhSensor()
@@ -285,7 +283,7 @@ void readPhSensor()
 
   // --- Jonathan's 5–9 pH local calibration ---
   const float m = -9.76f; // slope  (pH per V)
-  const float b = 19.45f; // intercept
+  const float b = 24.35f; // intercept
   float ph = m * v + b;
 
   // Clamp to a reasonable plant range
