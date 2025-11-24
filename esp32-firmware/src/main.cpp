@@ -307,8 +307,8 @@ void readWaterSensor()
 {
   int val = analogRead(WATER_SENSOR_PIN);
   bool ok = val > WATER_THRESHOLD;
-  // sensorData["water_sufficient"] = ok;
-  sensorData["water_sufficient"] = true;
+  sensorData["water_sufficient"] = ok;
+  // sensorData["water_sufficient"] = true;
   lastWaterADC = val;
 
 #if VERBOSE_LOG
