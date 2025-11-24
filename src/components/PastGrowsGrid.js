@@ -268,10 +268,9 @@ function ArchiveDetailsModal({ archive, onClose, onDelete }) {
         </Space>
       }
       width={1000}
-      destroyOnClose={false}
       maskClosable={false}
     >
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space  size={12} style={{ width: '100%' }}>
         <Space size={8} wrap>
           <Tag color="blue">{(a?.finalStage || '—').toLowerCase()}</Tag>
           <Tag icon={<CalendarOutlined />} color="default">

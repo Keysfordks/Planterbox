@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Card, message, Select, Button, Alert, Tooltip, Modal,
+  Card, Avatar, Spin, message, Select, Button, Alert, Tooltip, Modal,
   Typography, Divider, Input, Form, InputNumber, Row, Col
 } from "antd";
 import Navbar from "../../components/navbar";
@@ -66,7 +66,7 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    fetchPlantPresets();
+     fetchPlantPresets();
   }, [router]);
 
   useEffect(() => {
@@ -272,6 +272,7 @@ export default function DashboardPage() {
     }
   };
 
+
   const headerText =
     selectedPlant && selectedStage
       ? `${selectedPlant.charAt(0).toUpperCase() + selectedPlant.slice(1)} - ${
@@ -284,9 +285,10 @@ export default function DashboardPage() {
 
   return (
     <div className={styles.container}>
-      <Navbar />
+      <Navbar/>
 
       <main className={styles.main}>
+
         {/* Main Dashboard Card */}
         <div className={styles.dashboardCard}>
           <div className={styles.dashboardHeader}>
@@ -587,7 +589,6 @@ export default function DashboardPage() {
             {isCustomPlant && (
               <>
                 <Alert
-                  message="Custom Plant Configuration"
                   description="Define ideal environmental ranges for each stage. Switch stages any time during growth."
                   type="info"
                   showIcon
@@ -797,7 +798,6 @@ export default function DashboardPage() {
               <>
                 <Divider style={{ margin: "16px 0" }} />
                 <Alert
-                  message="Setup Instructions"
                   description="Fill the tank to the marked range with distilled water before starting. Add water as needed."
                   type="info"
                   showIcon

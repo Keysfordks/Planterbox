@@ -30,9 +30,8 @@ String stored_password = "";
 bool config_mode = true;
 
 // -------- API Configuration --------
-// CRITICAL: Set this to YOUR computer's IP address where Next.js is running
-// This should be 192.168.86.22 based on your webpage URL
-const char *HOSTNAME = "192.168.136.1"; // ← CHANGE THIS IF YOUR IP IS DIFFERENT
+// FIXED: Your laptop's IP address where Next.js is running
+const char *HOSTNAME = "192.168.86.22"; // ← Your laptop hosting Next.js
 const int HTTP_PORT = 3000;             // Next.js default port
 const char *API_PATH = "/api/sensordata";
 
@@ -284,9 +283,7 @@ void readPhSensor()
   float avg = sum / (float)N;
   float v = avg * 3.3f / 4095.0f; // ESP32 ADC -> volts
 
-  // If no signal, set pH = 0
-
-  // --- Jonathan’s 5–9 pH local calibration ---
+  // --- Jonathan's 5–9 pH local calibration ---
   const float m = -9.76f; // slope  (pH per V)
   const float b = 19.45f; // intercept
   float ph = m * v + b;
@@ -310,7 +307,8 @@ void readWaterSensor()
 {
   int val = analogRead(WATER_SENSOR_PIN);
   bool ok = val > WATER_THRESHOLD;
-  sensorData["water_sufficient"] = ok;
+  // sensorData["water_sufficient"] = ok;
+  sensorData["water_sufficient"] = true;
   lastWaterADC = val;
 
 #if VERBOSE_LOG
@@ -602,7 +600,7 @@ void sendControlPage(WiFiClient &client)
   client.println("<div class=\"sensor\">");
   client.println("<span>Water Detected:</span>");
   client.print("<span class=\"value\">");
-  client.print(sensorData["water_detected"].as<bool>() ? "YES" : "NO");
+  client.print(sensorData["water_sufficient"].as<bool>() ? "YES" : "NO");
   client.println("</span></div>");
 
   client.println("</div>");
@@ -1156,7 +1154,7 @@ void loop()
     // --- Auto light adjust ---
     adjustLightHeightAuto();
 
-    // Send data to web server
+    // Send data to web server - FIXED: Using regular WiFiClient instead of WiFiClientSecure
     String payload;
     serializeJson(sensorData, payload);
 #if VERBOSE_LOG
@@ -1164,15 +1162,17 @@ void loop()
     Serial.println(payload);
 #endif
 
-    WiFiClientSecure client;
-     client.setInsecure();
+    WiFiClient client; // Changed from WiFiClientSecure
     HTTPClient http;
 
-    String url = "http://";
+    String url = "http://"; // HTTP not HTTPS
     url += HOSTNAME;
     url += ":";
     url += String(HTTP_PORT);
     url += API_PATH;
+
+    Serial.print("[HTTP] Connecting to: ");
+    Serial.println(url);
 
     if (http.begin(client, url))
     {

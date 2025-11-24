@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import clientPromise from "../../../lib/mongodb";
 import { ObjectId } from "mongodb";
 
-const DEFAULT_USER_ID = "local_user";
-
+const DEFAULT_USER_ID = "default_device";
 /**
  * GET /api/archives
  * - List user's archives (no query param)

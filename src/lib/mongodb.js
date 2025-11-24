@@ -13,7 +13,6 @@ const options = {
 let client;
 let clientPromise;
 
-
   // In development, use a global variable to preserve the client across hot reloads
   if (!global._mongoClientPromise) {
     client = new MongoClient(uri, options);

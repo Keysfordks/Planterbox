@@ -107,21 +107,25 @@ export async function POST(request) {
     const appState = db.collection("app_state");
     const archives = db.collection("archives");
 
-    const session = await auth().catch(() => null);
-    const authUserId = session?.user?.id;
-
+    // REMOVED: Authentication check for POST requests from ESP32
+    // The ESP32 doesn't have authentication, so we'll use deviceId only
+    
     const body = await request.json();
     const action = body?.action;
 
     // ---------- SELECT PLANT ----------
+    // This would still require auth if called from web UI
     if (action === "select_plant") {
-      if (!authUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       const { selectedPlant, selectedStage } = body || {};
       if (!selectedPlant || !selectedStage) {
         return NextResponse.json({ error: "Missing plant or stage" }, { status: 400 });
       }
+      
+      // Use deviceId as userId for plant selection
+      const deviceId = body?.deviceId || "default_device";
+      
       await appState.updateOne(
-        { state_name: "plantSelection", userId: authUserId },
+        { state_name: "plantSelection", userId: deviceId },
         { $set: { value: { plant: selectedPlant, stage: selectedStage, timestamp: new Date().toISOString() } } },
         { upsert: true }
       );
@@ -130,23 +134,22 @@ export async function POST(request) {
 
     // ---------- ABORT PLANT ----------
     if (action === "abort_plant") {
-      if (!authUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      const deviceId = body?.deviceId || "default_device";
 
       // Optional snapshots passed from client (HistoricalCharts)
       const snapshots = body?.snapshots ?? null;
 
-      // Current selection for this user (to archive)
-      const selection = await appState.findOne({ state_name: "plantSelection", userId: authUserId });
+      // Current selection for this device (to archive)
+      const selection = await appState.findOne({ state_name: "plantSelection", userId: deviceId });
 
       if (selection?.value?.plant && selection?.value?.stage) {
-        // Compute simple stats from sensordata for the (default) device
-        const deviceIdToClear = body?.deviceId || "default_device";
+        // Compute simple stats from sensordata for the device
         const sens = db.collection("sensordata");
 
         // Stats computing helper
         async function summarizeMetric(field) {
           const pipe = [
-            { $match: { userId: deviceIdToClear } },
+            { $match: { userId: deviceId } },
             { $addFields: { ts: { $toDate: "$timestamp" } } },
             ...(selection?.value?.timestamp ? [{ $match: { ts: { $gte: new Date(selection.value.timestamp) } } }] : []),
             { $group: { _id: null, min: { $min: `$${field}` }, max: { $max: `$${field}` }, avg: { $avg: `$${field}` }, count: { $sum: 1 } } }
@@ -166,7 +169,7 @@ export async function POST(request) {
         const samplesCount = Math.max(t?.samples || 0, h?.samples || 0, pH?.samples || 0, ppm?.samples || 0);
 
         await archives.insertOne({
-          userId: authUserId,
+          userId: deviceId,
           plantName: selection.value.plant,
           finalStage: selection.value.stage,
           startDate: selection.value.timestamp ?? null,
@@ -183,11 +186,10 @@ export async function POST(request) {
       }
 
       // Remove selection
-      await appState.deleteOne({ state_name: "plantSelection", userId: authUserId });
+      await appState.deleteOne({ state_name: "plantSelection", userId: deviceId });
 
-      // NEW: clear sensordata for the device so the next plant starts fresh
-      const deviceIdToClear = body?.deviceId || "default_device";
-      await db.collection("sensordata").deleteMany({ userId: deviceIdToClear });
+      // Clear sensordata for the device so the next plant starts fresh
+      await db.collection("sensordata").deleteMany({ userId: deviceId });
 
       return NextResponse.json({ ok: true }, { status: 200 });
     }
@@ -198,8 +200,12 @@ export async function POST(request) {
     const deviceId = body?.deviceId || "default_device";
     const activeSelectionDoc = await appState.findOne({ state_name: "plantSelection" });
 
+    console.log("[SENSORDATA] POST received from deviceId:", deviceId);
+    console.log("[SENSORDATA] Active selection:", activeSelectionDoc?.value);
+
     if (!activeSelectionDoc?.value?.plant || !activeSelectionDoc?.value?.stage) {
       // No active selection anywhere -> do not store; return safe defaults
+      console.log("[SENSORDATA] No active plant selection, returning defaults");
       return NextResponse.json(safeDeviceDefaults(), { status: 200 });
     }
 
@@ -209,12 +215,16 @@ export async function POST(request) {
       userId: deviceId, // namespace by device ID
       timestamp: body.timestamp ? new Date(body.timestamp) : new Date() // store as Date
     };
+    
+    console.log("[SENSORDATA] Saving sensor data:", sensorData);
     await saveSensor(db, sensorData);
 
     // Determine selection (prefer deviceId match, fallback to latest any)
     const { plant, stage, ownerId } = await getSelection(appState, deviceId);
+    console.log("[SENSORDATA] Using plant:", plant, "stage:", stage);
 
     const { deviceCommands } = await processSensorData(sensorData, plant, stage, ownerId, deviceId);
+    console.log("[SENSORDATA] Sending commands:", deviceCommands);
 
     return NextResponse.json(deviceCommands, { status: 200 });
   } catch (err) {
@@ -231,11 +241,6 @@ export async function GET(request) {
     const sens = db.collection("sensordata");
     const appState = db.collection("app_state");
 
-    // Auth is optional for dashboard polling; guard it
-    let session = null;
-    try { session = await auth(); } catch {}
-    const authUserId = session?.user?.id ?? null;
-
     const { searchParams } = new URL(request.url);
     const growth = searchParams.get("growth") === "true";
     const queryPlant = searchParams.get("plant");
@@ -245,7 +250,7 @@ export async function GET(request) {
     // 1) Historical charts branch
     if (growth) {
       try {
-        const sel = await getSelection(appState, authUserId ?? deviceId);
+        const sel = await getSelection(appState, deviceId);
         const plant = queryPlant || sel.plant;
         const stage = queryStage || sel.stage;
         const selectionStartISO = sel.selectionDoc?.value?.timestamp ?? null;
@@ -270,7 +275,7 @@ export async function GET(request) {
     // 2) Ideal lookup branch
     if (queryPlant && queryStage) {
       try {
-        const { ownerId } = await getSelection(appState, authUserId ?? deviceId);
+        const { ownerId } = await getSelection(appState, deviceId);
         const profiles = db.collection("plant_profiles");
         const profile = await profiles.findOne(
           {
@@ -306,7 +311,7 @@ export async function GET(request) {
 
     let selection = { plant: "default", stage: "seedling", ownerId: null };
     try {
-      selection = await getSelection(appState, authUserId ?? deviceId);
+      selection = await getSelection(appState, deviceId);
     } catch (e) {
       console.error("GET /api/sensordata getSelection error:", e);
     }

@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import clientPromise from '../../../lib/mongodb';
 
-const DEFAULT_USER_ID = "local_user";
+const DEFAULT_USER_ID = "default_device"; 
 
 /**
  * GET /api/plants
